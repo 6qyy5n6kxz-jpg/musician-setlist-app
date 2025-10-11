@@ -85,7 +85,8 @@ class SetlistSong(db.Model):
     setlist_id = db.Column(db.Integer, db.ForeignKey("setlist.id"), nullable=False)
     song_id = db.Column(db.Integer, db.ForeignKey("song.id"), nullable=False)
     position = db.Column(db.Integer, nullable=False, default=0)
-    notes = db.Column(db.String(500), nullable=True)  # NEW: per-song notes for this setlist row
+    notes = db.Column(db.String(500), nullable=True)  # per-song notes
+    section_name = db.Column(db.String(100), nullable=True)  # NEW: section label (e.g., "Set 1", "Encore")
 
     song = db.relationship("Song")
 
@@ -153,18 +154,9 @@ def ensure_schema():
         db.session.execute(text("ALTER TABLE song ADD COLUMN duration_override_sec INTEGER"))
         db.session.commit()
 
-        # --- Setlist table retrofits ---
-    info3 = db.session.execute(text("PRAGMA table_info(setlist);")).fetchall()
-    cols3 = [row[1] for row in info3]
-    if "no_repeat_artists" not in cols3:
-        db.session.execute(text("ALTER TABLE setlist ADD COLUMN no_repeat_artists BOOLEAN DEFAULT 1"))
-        db.session.commit()    
-
     # --- SetlistSong table retrofits ---
-    # SQLAlchemy default table name for SetlistSong is "setlist_song"
     sls_table = "setlist_song"
 
-    # Only try to alter if the table already exists (older DBs)
     tables = db.session.execute(
         text("SELECT name FROM sqlite_master WHERE type='table'")
     ).fetchall()
@@ -176,15 +168,19 @@ def ensure_schema():
         if "notes" not in cols2:
             db.session.execute(text(f"ALTER TABLE {sls_table} ADD COLUMN notes VARCHAR(500)"))
             db.session.commit()
-    # If the table didn't exist, db.create_all() above just created it
-    # with the current model (which already includes notes).
-
-        # --- Setlist: add share_token if missing
-        info4 = db.session.execute(text("PRAGMA table_info(setlist);")).fetchall()
-        cols4 = [row[1] for row in info4]
-        if "share_token" not in cols4:
-            db.session.execute(text("ALTER TABLE setlist ADD COLUMN share_token VARCHAR(64)"))
+        if "section_name" not in cols2:
+            db.session.execute(text(f"ALTER TABLE {sls_table} ADD COLUMN section_name VARCHAR(100)"))
             db.session.commit()
+
+    # --- Setlist table retrofits ---
+    info3 = db.session.execute(text("PRAGMA table_info(setlist);")).fetchall()
+    cols3 = [row[1] for row in info3]
+    if "no_repeat_artists" not in cols3:
+        db.session.execute(text("ALTER TABLE setlist ADD COLUMN no_repeat_artists BOOLEAN DEFAULT 1"))
+        db.session.commit()
+    if "share_token" not in cols3:
+        db.session.execute(text("ALTER TABLE setlist ADD COLUMN share_token VARCHAR(64)"))
+        db.session.commit()
 
 # --- helpers ---
 def normalize_positions(setlist: Setlist):
@@ -1886,13 +1882,49 @@ def healthz():
         db_ok = False
     return (f"ok | db={ 'up' if db_ok else 'down' }", 200)
 
+# --- Helper: ReportLab canvas that writes "Page N of M" footers ---
+from reportlab.pdfgen import canvas as _rl_canvas
+
+class NumberedCanvas(_rl_canvas.Canvas):
+    """Canvas that draws a footer with 'Printed … · Page N of M' on every page."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states = []
+        # set by caller:
+        self._footer_left = ""     # e.g., 'Printed Oct 11, 2025'
+        self._margin = 0.75 * inch # left/right margin
+        self._page_width = letter[0]
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        total = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self._draw_footer(total)
+            super().showPage()
+        super().save()
+
+    def _draw_footer(self, total_pages: int):
+        self.setFont("Helvetica", 9)
+        y = self._margin - 0.45 * inch
+        if y < 0.3 * inch:
+            y = 0.3 * inch
+        # Left: printed date
+        if self._footer_left:
+            self.drawString(self._margin, y, self._footer_left)
+        # Right: Page N of M
+        self.drawRightString(self._page_width - self._margin, y, f"Page {self.getPageNumber()} of {total_pages}")
+
 @app.get("/setlists/<int:setlist_id>/export.pdf")
 def export_setlist_pdf(setlist_id):
     from datetime import datetime
 
     sl = Setlist.query.get_or_404(setlist_id)
 
-    # build rows with duration + notes
+    # Build rows with duration + notes
     total_sec = 0
     rows = []
     for ss in sl.songs:
@@ -1908,7 +1940,7 @@ def export_setlist_pdf(setlist_id):
             "notes": ss.notes or "",
         })
 
-    # --- PDF layout ---
+    # --- PDF layout constants ---
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=letter)
     width, height = letter
@@ -1931,21 +1963,19 @@ def export_setlist_pdf(setlist_id):
 
     printed_str = "Printed " + datetime.now().strftime("%b %d, %Y")
 
-    def draw_footer():
-        """Draw footer with date and page number (current of total)."""
-        # ReportLab fills %(pageNumber)s automatically; we’ll use a placeholder for total later
+    def header_height():
+        # Rough total header height from header + labels + rule
+        return (18 + 14 + 18 + 10 + 1 + 8)  # matches draw_page_header() decrements
+
+    def draw_footer(page_num, total_pages):
         c.setFont("Helvetica", 9)
         y = margin - 0.45 * inch
         if y < 0.3 * inch:
             y = 0.3 * inch
-        # Left: printed date
         c.drawString(margin, y, printed_str)
-        # Right: page number (total filled by canvas on save)
-        page_text = "Page %d" % c.getPageNumber()
-        c.drawRightString(width - margin, y, page_text)
+        c.drawRightString(width - margin, y, f"Page {page_num} of {total_pages}")
 
     def draw_page_header(title_suffix=""):
-        """Draw header + column labels; returns starting y."""
         y = height - margin
         c.setFont("Helvetica-Bold", 16)
         c.drawString(margin, y, f"Setlist: {sl.name}{title_suffix}")
@@ -1961,7 +1991,6 @@ def export_setlist_pdf(setlist_id):
         c.drawString(margin, y, f"Songs: {len(rows)}    Approx Total: {fmt_mmss(total_sec)}")
         y -= 18
 
-        # column labels
         c.setFont("Helvetica-Bold", 11)
         c.drawString(x_title, y, "Song")
         c.drawRightString(x_key + col_key_w - 2, y, "Key")
@@ -1973,39 +2002,45 @@ def export_setlist_pdf(setlist_id):
         y -= 8
         return y
 
-    def new_page(cont_suffix=" (cont.)"):
-        # footer for the page we’re finishing
-        draw_footer()
-        c.showPage()
-        return draw_page_header(cont_suffix)
-
-    # first page
-    y = draw_page_header("")
-
-    # draw each song row (title + optional notes line)
-    for r in rows:
-        # calculate needed height for this row
+    def row_needed_height(r):
         title_text = f"#{r['pos']} — {r['title']} — {r['artist']}"
         title_wrapped = simpleSplit(title_text, "Helvetica", 11, title_w)
         notes_wrapped = simpleSplit(f"Notes: {r['notes']}", "Helvetica-Oblique", 9, title_w) if r["notes"] else []
+        return len(title_wrapped) * title_line_h + (len(notes_wrapped) * notes_line_h) + row_gap, title_wrapped, notes_wrapped
 
-        needed = len(title_wrapped) * title_line_h + (len(notes_wrapped) * notes_line_h) + row_gap
-        # make room
-        if y - needed < margin + 20:
-            y = new_page()
+    # ---- PASS 1: pagination simulation to compute total_pages ----
+    usable_min_y = margin + 20  # keep some bottom padding
+    y = height - margin - header_height()
+    total_pages = 1
+    for r in rows:
+        needed, _, _ = row_needed_height(r)
+        if y - needed < usable_min_y:
+            total_pages += 1
+            y = height - margin - header_height()
+        y -= needed
 
-        # draw title lines
+    # ---- PASS 2: actual drawing with correct "Page N of M" ----
+    page_num = 1
+    y = draw_page_header("")
+    for idx, r in enumerate(rows):
+        needed, title_wrapped, notes_wrapped = row_needed_height(r)
+
+        if y - needed < usable_min_y:
+            # finish page
+            draw_footer(page_num, total_pages)
+            c.showPage()
+            page_num += 1
+            y = draw_page_header(" (cont.)")
+
         c.setFont("Helvetica", 11)
         for i, line in enumerate(title_wrapped):
             c.drawString(x_title, y, line)
             if i == 0:
-                # right-side columns align with first title line
                 c.drawRightString(x_key + col_key_w - 2, y, r["key"])
                 c.drawRightString(x_bpm + col_bpm_w - 2, y, r["bpm"])
                 c.drawRightString(x_dur + col_dur_w - 2, y, r["dur"])
             y -= title_line_h
 
-        # draw notes (if any)
         if notes_wrapped:
             c.setFont("Helvetica-Oblique", 9)
             for line in notes_wrapped:
@@ -2014,8 +2049,8 @@ def export_setlist_pdf(setlist_id):
 
         y -= row_gap
 
-    # final footer then save
-    draw_footer()
+    # Final footer & save
+    draw_footer(page_num, total_pages)
     c.save()
 
     pdf_bytes = buf.getvalue()
