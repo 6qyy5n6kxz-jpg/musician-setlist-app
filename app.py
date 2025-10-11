@@ -931,6 +931,14 @@ def home():
     <p>This is your local Setlist Genie dev app. Use the buttons above to manage songs and setlists.</p>
     """
     return render_template_string(BASE_HTML, content=inner)
+    
+def _admin_ok(req):
+    """Allow initdb only if no ADMIN_TOKEN is set, or if it matches."""
+    token = os.getenv("ADMIN_TOKEN")
+    if not token:
+        # No token configured → allow (dev default)
+        return True
+    return (req.args.get("admin") == token) or (req.headers.get("X-Admin-Token") == token)
 
 # --- routes: Songs ---
 @app.get("/songs")
@@ -2109,6 +2117,8 @@ def export_setlist_pdf(setlist_id):
 # --- init / migrate route ---
 @app.get("/initdb")
 def initdb():
+    if not _admin_ok(request):
+        return ("Not found", 404)
     ensure_schema()
     return "Database initialized / migrated."
 
