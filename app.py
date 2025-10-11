@@ -1876,6 +1876,16 @@ def export_setlist_csv(setlist_id):
     resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return resp
 
+@app.get("/healthz")
+def healthz():
+    # quick DB ping; never crash health
+    try:
+        db.session.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        db_ok = False
+    return (f"ok | db={ 'up' if db_ok else 'down' }", 200)
+
 @app.get("/setlists/<int:setlist_id>/export.pdf")
 def export_setlist_pdf(setlist_id):
     from datetime import datetime
