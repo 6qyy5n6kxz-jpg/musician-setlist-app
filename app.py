@@ -30,13 +30,22 @@ from flask import (
     url_for,
     jsonify,
 )
+from flask_login import (
+    LoginManager,
+    UserMixin,
+    current_user,
+    login_required,
+    login_user,
+    logout_user,
+)
 from flask_sqlalchemy import SQLAlchemy
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
-from sqlalchemy import text
+from sqlalchemy import text, or_, inspect
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 
 load_dotenv()
 
@@ -98,6 +107,10 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+login_manager.login_message_category = "info"
+
 @app.context_processor
 def inject_utils():
     return dict(
@@ -140,6 +153,72 @@ def _allowed_file(file_storage):
         mt = mimetypes.guess_type(file_storage.filename)[0] or ""
     return mt in ALLOWED_MIME
 
+
+def _current_user_id() -> int | None:
+    if not current_user.is_authenticated:
+        return None
+    try:
+        return int(current_user.get_id())
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_admin() -> bool:
+    return current_user.is_authenticated and bool(getattr(current_user, "is_admin", False))
+
+
+def _song_editable(song: "Song") -> bool:
+    if not current_user.is_authenticated:
+        return False
+    if song.user_id is None:
+        return _is_admin()
+    return song.user_id == _current_user_id() or _is_admin()
+
+
+def _setlist_editable(sl: "Setlist") -> bool:
+    if not current_user.is_authenticated:
+        return False
+    if sl.user_id is None:
+        return _is_admin()
+    return sl.user_id == _current_user_id() or _is_admin()
+
+
+def _require_song_owner(song: "Song") -> None:
+    if not _song_editable(song):
+        abort(403)
+
+
+def _require_setlist_owner(sl: "Setlist") -> None:
+    if not _setlist_editable(sl):
+        abort(403)
+
+# --- User model ---
+class User(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+    is_admin = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    songs = db.relationship("Song", backref="owner", lazy="dynamic")
+    setlists = db.relationship("Setlist", backref="owner", lazy="dynamic")
+
+    def set_password(self, password: str) -> None:
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        return check_password_hash(self.password_hash, password)
+
+
+@login_manager.user_loader
+def load_user(user_id: str):
+    try:
+        return User.query.get(int(user_id))
+    except Exception:
+        return None
+
+
 # --- Song model ---
 class Song(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -152,6 +231,8 @@ class Song(db.Model):
     duration_override_sec = db.Column(db.Integer, nullable=True)
     release_year = db.Column(db.Integer, nullable=True)
     chord_chart = db.Column(db.Text, nullable=True)  # ChordPro / plain chart text for Live Mode
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    is_public = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     # Optional: song-level default chart (used in Live Mode fallback)
     default_file_id = db.Column(
@@ -246,6 +327,7 @@ class Setlist(db.Model):
     share_token = db.Column(db.String(64), unique=True, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     reset_numbering_per_section = db.Column(db.Boolean, default=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
 
     songs = db.relationship(
     "SetlistSong",
@@ -418,6 +500,14 @@ def _ensure_schema_columns() -> None:
         if "chord_chart" not in song_cols:
             db.session.execute(text("ALTER TABLE song ADD COLUMN chord_chart TEXT"))
             db.session.commit()
+        if "user_id" not in song_cols:
+            db.session.execute(text("ALTER TABLE song ADD COLUMN user_id INTEGER"))
+            db.session.commit()
+        if "is_public" not in song_cols:
+            db.session.execute(text("ALTER TABLE song ADD COLUMN is_public BOOLEAN DEFAULT 1"))
+            db.session.commit()
+            db.session.execute(text("UPDATE song SET is_public = 1 WHERE is_public IS NULL"))
+            db.session.commit()
 
         sls_table = "setlist_song"
 
@@ -508,9 +598,60 @@ def _ensure_schema_columns() -> None:
         if "reset_numbering_per_section" not in cols3:
             db.session.execute(text("ALTER TABLE setlist ADD COLUMN reset_numbering_per_section BOOLEAN DEFAULT 0"))
             db.session.commit()
+        if "user_id" not in cols3:
+            db.session.execute(text("ALTER TABLE setlist ADD COLUMN user_id INTEGER"))
+            db.session.commit()
 
 
 _ensure_schema_columns()
+
+def _ensure_schema_columns_postgres() -> None:
+    with app.app_context():
+        bind = db.session.get_bind()
+        if not bind:
+            return
+        if not bind.dialect.name.startswith("postgres"):
+            return
+
+        def exec_sql(sql: str) -> None:
+            db.session.execute(text(sql))
+            db.session.commit()
+
+        exec_sql("ALTER TABLE song ADD COLUMN IF NOT EXISTS duration_override_sec INTEGER")
+        exec_sql("ALTER TABLE song ADD COLUMN IF NOT EXISTS default_attachment_id INTEGER")
+        exec_sql("ALTER TABLE song ADD COLUMN IF NOT EXISTS release_year INTEGER")
+        exec_sql("ALTER TABLE song ADD COLUMN IF NOT EXISTS chord_chart TEXT")
+        exec_sql("ALTER TABLE song ADD COLUMN IF NOT EXISTS user_id INTEGER")
+        exec_sql("ALTER TABLE song ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT TRUE")
+        exec_sql("UPDATE song SET is_public = TRUE WHERE is_public IS NULL")
+
+        exec_sql("ALTER TABLE setlist_song ADD COLUMN IF NOT EXISTS notes VARCHAR(500)")
+        exec_sql("ALTER TABLE setlist_song ADD COLUMN IF NOT EXISTS section_name VARCHAR(100)")
+        exec_sql("ALTER TABLE setlist_song ADD COLUMN IF NOT EXISTS preferred_attachment_id INTEGER")
+        exec_sql("CREATE INDEX IF NOT EXISTS ix_setlist_song_preferred_attachment_id ON setlist_song(preferred_attachment_id)")
+        exec_sql("ALTER TABLE setlist_song ADD COLUMN IF NOT EXISTS locked BOOLEAN DEFAULT FALSE")
+
+        exec_sql("ALTER TABLE setlist ADD COLUMN IF NOT EXISTS no_repeat_artists BOOLEAN DEFAULT TRUE")
+        exec_sql("ALTER TABLE setlist ADD COLUMN IF NOT EXISTS share_token VARCHAR(64)")
+        exec_sql("ALTER TABLE setlist ADD COLUMN IF NOT EXISTS reset_numbering_per_section BOOLEAN DEFAULT FALSE")
+        exec_sql("ALTER TABLE setlist ADD COLUMN IF NOT EXISTS user_id INTEGER")
+
+        exec_sql("ALTER TABLE attachment ADD COLUMN IF NOT EXISTS original_name VARCHAR(255)")
+        exec_sql("ALTER TABLE attachment ADD COLUMN IF NOT EXISTS stored_name VARCHAR(255)")
+        exec_sql("ALTER TABLE attachment ADD COLUMN IF NOT EXISTS mimetype VARCHAR(120)")
+        exec_sql("ALTER TABLE attachment ADD COLUMN IF NOT EXISTS size_bytes INTEGER")
+        exec_sql("ALTER TABLE attachment ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        exec_sql("ALTER TABLE attachment ADD COLUMN IF NOT EXISTS kind VARCHAR(20) DEFAULT 'pdf'")
+        exec_sql("ALTER TABLE attachment ADD COLUMN IF NOT EXISTS pages INTEGER")
+
+        exec_sql("ALTER TABLE patron_request ADD COLUMN IF NOT EXISTS setlist_id INTEGER")
+        exec_sql("ALTER TABLE patron_request ADD COLUMN IF NOT EXISTS song_id INTEGER")
+        exec_sql("ALTER TABLE patron_request ADD COLUMN IF NOT EXISTS free_text_title VARCHAR(255)")
+        exec_sql("ALTER TABLE patron_request ADD COLUMN IF NOT EXISTS from_name VARCHAR(120)")
+        exec_sql("ALTER TABLE patron_request ADD COLUMN IF NOT EXISTS from_contact VARCHAR(120)")
+        exec_sql("ALTER TABLE patron_request ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'new'")
+        exec_sql("ALTER TABLE patron_request ADD COLUMN IF NOT EXISTS created_at TIMESTAMP")
+        exec_sql("ALTER TABLE patron_request ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP")
 
 # --- helpers ---
 
@@ -1031,6 +1172,7 @@ BASE_HTML = """
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; max-width: 1000px; margin: 40px auto; padding: 0 16px; }
     a { text-decoration: none; }
     .btn { display: inline-block; padding: 8px 12px; border: 1px solid #ccc; border-radius: 8px; }
+    .btn.active { background:var(--text); color:var(--bg); }
     .btn-danger { color: #a00; border-color: #a00; }
     .row { padding: 10px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
     .muted { color: #666; font-size: 0.9em; }
@@ -1040,6 +1182,10 @@ BASE_HTML = """
     .right { text-align: right; display:flex; gap:6px; align-items:center; }
     form.inline { display: inline; }
     nav.topnav { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:18px; }
+    nav.topnav .nav-left,
+    nav.topnav .nav-right { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    nav.topnav .nav-spacer { flex:1 1 auto; }
+    nav.topnav .nav-hello { font-weight:600; opacity:0.75; }
     nav.topnav .btn { font-size:0.95rem; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .section { padding: 10px 0; border-top: 1px solid #eee; margin-top: 10px; }
@@ -1086,17 +1232,28 @@ BASE_HTML = """
       h1 { font-size: clamp(1.75rem, 4.4vw, 2rem); }
       h2 { font-size: clamp(1.45rem, 4vw, 1.8rem); }
       nav.topnav {
-        display:flex;
-        gap:6px;
-        flex-wrap:wrap;
-        margin-bottom:12px;
+        flex-direction:column;
+        align-items:stretch;
       }
-      nav.topnav .btn {
-        flex: 1 1 calc(50% - 6px);
+      nav.topnav .nav-left,
+      nav.topnav .nav-right {
+        width:100%;
+        justify-content:space-between;
+      }
+      nav.topnav .nav-right {
+        gap:6px;
+      }
+      nav.topnav .nav-left .btn {
+        flex:1 1 calc(50% - 6px);
         text-align:center;
         padding:10px;
         font-size:0.98rem;
       }
+      nav.topnav .nav-right .btn {
+        flex:1;
+        justify-content:center;
+      }
+      nav.topnav .nav-spacer { display:none; }
       .grid {
         grid-template-columns: 1fr;
       }
@@ -1309,15 +1466,26 @@ BASE_HTML = """
     })();
   </script>
 
-  <!-- Top nav with a single theme toggle button -->
+  <!-- Top nav with theme toggle + auth controls -->
   <nav class="topnav">
-    <a class="btn" href="{{ url_for('home') }}">Home</a>
-    <a class="btn" href="{{ url_for('list_songs') }}">Songs</a>
-    <a class="btn" href="{{ url_for('new_song') }}">Add Song</a>
-    <a class="btn" href="{{ url_for('list_setlists') }}">Setlists</a>
-    <a class="btn" href="{{ url_for('new_setlist') }}">New Setlist</a>
-    <span style="flex:1;"></span>
-    <button id="themeToggle" class="btn" type="button" title="Toggle dark / light">🌗 Theme</button>
+    <div class="nav-left">
+      <a class="btn" href="{{ url_for('home') }}">Home</a>
+      <a class="btn" href="{{ url_for('list_songs') }}">Songs</a>
+      <a class="btn" href="{{ url_for('new_song') }}">Add Song</a>
+      <a class="btn" href="{{ url_for('list_setlists') }}">Setlists</a>
+      <a class="btn" href="{{ url_for('new_setlist') }}">New Setlist</a>
+    </div>
+    <span class="nav-spacer"></span>
+    <div class="nav-right">
+      <button id="themeToggle" class="btn" type="button" title="Toggle dark / light">🌗 Theme</button>
+      {% if current_user.is_authenticated %}
+        <span class="nav-hello">Hi, {{ current_user.username }}</span>
+        <a class="btn" href="{{ url_for('logout') }}">Log out</a>
+      {% else %}
+        <a class="btn" href="{{ url_for('login') }}">Log in</a>
+        <a class="btn" href="{{ url_for('register') }}">Sign up</a>
+      {% endif %}
+    </div>
   </nav>
 
   <h1>Setlist Genie</h1>
@@ -1352,7 +1520,14 @@ BASE_HTML = """
 LIST_HTML = """
 <h2>Songs</h2>
 
+<div style="display:flex; gap:8px; flex-wrap:wrap; margin:12px 0;">
+  <a class="btn{% if scope == 'all' %} active{% endif %}" href="{{ url_for('list_songs', scope='all') }}">All songs</a>
+  <a class="btn{% if scope == 'mine' %} active{% endif %}" href="{{ url_for('list_songs', scope='mine') }}">My songs</a>
+  <a class="btn{% if scope == 'catalog' %} active{% endif %}" href="{{ url_for('list_songs', scope='catalog') }}">Shared catalog</a>
+</div>
+
 <form method="get" action="{{ url_for('list_songs') }}" style="margin: 12px 0;">
+  <input type="hidden" name="scope" value="{{ scope }}" />
   <input name="q" placeholder="Search title, artist, genre, key, tags…" value="{{ q or '' }}" />
      <p style="margin-top:8px;">
     <button class="btn" type="submit">Search</button>
@@ -5274,13 +5449,27 @@ def delete_attachment(att_id):
     return redirect(url_for("edit_song", song_id=song_id))
 
 @app.get("/songs")
+@login_required
 def list_songs():
+    scope = (request.args.get("scope", "all") or "all").lower()
+    if scope not in {"all", "mine", "catalog"}:
+        scope = "all"
+
     q = request.args.get("q", "").strip()
     query = Song.query
+
+    user_id = _current_user_id()
+    if scope == "mine":
+        query = query.filter(Song.user_id == user_id)
+    elif scope == "catalog":
+        query = query.filter(or_(Song.is_public.is_(True), Song.user_id.is_(None)))
+    else:  # all
+        query = query.filter(or_(Song.is_public.is_(True), Song.user_id == user_id))
+
     if q:
         like = f"%{q}%"
         query = query.filter(
-            db.or_(
+            or_(
                 Song.title.ilike(like),
                 Song.artist.ilike(like),
                 Song.genre.ilike(like),
@@ -5289,7 +5478,14 @@ def list_songs():
             )
         )
     songs = query.order_by(Song.created_at.desc()).all()
-    inner = render_template_string(LIST_HTML, songs=songs, q=q, fmt_mmss=fmt_mmss, estimate=estimate_duration_seconds)
+    inner = render_template_string(
+        LIST_HTML,
+        songs=songs,
+        q=q,
+        scope=scope,
+        fmt_mmss=fmt_mmss,
+        estimate=estimate_duration_seconds,
+    )
     return render_template_string(BASE_HTML, content=inner)
 
 @app.get("/songs/new")
@@ -7951,6 +8147,7 @@ def ensure_schema():
     with app.app_context():
         db.create_all()
         _ensure_schema_columns()
+        _ensure_schema_columns_postgres()
         print("✅ ensure_schema completed successfully.")
 
 # single init call
