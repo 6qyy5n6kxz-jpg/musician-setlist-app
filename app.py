@@ -38,6 +38,7 @@ from flask_login import (
     login_user,
     logout_user,
 )
+from flask import render_template_string
 from flask_sqlalchemy import SQLAlchemy
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
@@ -48,15 +49,6 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 
 load_dotenv()
-
-def _run_section_preset(setlist_id: int, preset_func: Callable[[int], object]) -> None:
-    """Invoke preset routines safely outside a real request."""
-    with app.app_context():
-        if not Setlist.query.get(setlist_id):
-            return
-        with app.test_request_context():
-            preset_func(setlist_id)
-
 
 # --- Helpers for applying section presets programmatically ---
 def apply_section_preset_basic(setlist_id: int) -> None:
@@ -90,6 +82,129 @@ def parse_mmss_to_seconds(text):
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret")
 app.url_map.strict_slashes = False
+
+# --- Registration Page ---
+REGISTER_FORM_HTML = """
+<h2>Register</h2>
+<form method="post" action="{{ url_for('register') }}">
+  <p><label>Username</label><br/><input name="username" required></p>
+  <p><label>Email</label><br/><input name="email" type="email" required></p>
+  <p><label>Password</label><br/><input name="password" type="password" required></p>
+  <p><label>Confirm Password</label><br/><input name="password2" type="password" required></p>
+  <p><button class="btn" type="submit">Register</button></p>
+</form>
+<p>Already have an account? <a href="{{ url_for('login') }}">Log in</a></p>
+"""
+
+@app.route("/register/", methods=["GET", "POST"])
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for("list_songs"))
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        password2 = request.form.get("password2", "")
+        if not username or not email or not password:
+            flash("All fields are required.", "danger")
+        elif password != password2:
+            flash("Passwords do not match.", "danger")
+        elif User.query.filter_by(username=username).first():
+            flash("Username already taken.", "danger")
+        elif User.query.filter_by(email=email).first():
+            flash("Email already registered.", "danger")
+        else:
+            user = User(username=username, email=email)
+            user.set_password(password)
+            db.session.add(user)
+            db.session.commit()
+            flash("Registration successful. Please log in.", "success")
+            return redirect(url_for("login"))
+    # --- FIX: Render the form HTML with Jinja first ---
+    form_html = render_template_string(REGISTER_FORM_HTML)
+    return render_template_string(BASE_HTML, content=form_html)
+
+# --- Login Page (replace your current /login route) ---
+LOGIN_FORM_HTML = """
+<h2>Login</h2>
+<form method="post" action="{{ url_for('login') }}">
+  <p><label>Username</label><br/><input name="username" required></p>
+  <p><label>Password</label><br/><input name="password" type="password" required></p>
+  <p><button class="btn" type="submit">Log in</button></p>
+</form>
+<p>Don't have an account? <a href="/register">Register</a></p>
+<p><a href="{{ url_for('reset_password') }}">Forgot password?</a></p>
+"""
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("list_songs"))
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        user = User.query.filter_by(username=username).first()
+        if user and user.check_password(password):
+            login_user(user)
+            flash("Logged in successfully.", "success")
+            next_url = request.args.get("next") or url_for("list_songs")
+            return redirect(next_url)
+        else:
+            flash("Invalid username or password.", "danger")
+    # FIX: Render the form HTML with Jinja first
+    form_html = render_template_string(LOGIN_FORM_HTML)
+    return render_template_string(BASE_HTML, content=form_html)
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    flash("Logged out.", "info")
+    return redirect(url_for("login"))
+
+# --- Password Reset (simple: set new password by username/email) ---
+RESET_FORM_HTML = """
+<h2>Reset Password</h2>
+<form method="post" action="{{ url_for('reset_password') }}">
+  <p><label>Username or Email</label><br/><input name="identity" required></p>
+  <p><label>New Password</label><br/><input name="password" type="password" required></p>
+  <p><label>Confirm New Password</label><br/><input name="password2" type="password" required></p>
+  <p><button class="btn" type="submit">Reset Password</button></p>
+</form>
+<p><a href="{{ url_for('login') }}">Back to login</a></p>
+"""
+
+@app.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    if request.method == "POST":
+        identity = request.form.get("identity", "").strip()
+        password = request.form.get("password", "")
+        password2 = request.form.get("password2", "")
+        if not identity or not password:
+            flash("All fields are required.", "danger")
+        elif password != password2:
+            flash("Passwords do not match.", "danger")
+        else:
+            user = User.query.filter(
+                (User.username == identity) | (User.email == identity)
+            ).first()
+            if not user:
+                flash("No user found with that username or email.", "danger")
+            else:
+                user.set_password(password)
+                db.session.commit()
+                flash("Password reset successful. Please log in.", "success")
+                return redirect(url_for("login"))
+    return render_template_string(BASE_HTML, content=RESET_FORM_HTML)
+
+def _run_section_preset(setlist_id: int, preset_func: Callable[[int], object]) -> None:
+    """Invoke preset routines safely outside a real request."""
+    with app.app_context():
+        if not Setlist.query.get(setlist_id):
+            return
+        with app.test_request_context():
+            preset_func(setlist_id)
 
 # --- Database config (uses DATABASE_URL if set; else SQLite) ---
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -212,12 +327,8 @@ class User(db.Model, UserMixin):
 
 
 @login_manager.user_loader
-def load_user(user_id: str):
-    try:
-        return User.query.get(int(user_id))
-    except Exception:
-        return None
-
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 # --- Song model ---
 class Song(db.Model):
@@ -1466,7 +1577,7 @@ BASE_HTML = """
     })();
   </script>
 
-  <!-- Top nav with theme toggle + auth controls -->
+ <!-- Top nav with theme toggle + auth controls -->
   <nav class="topnav">
     <div class="nav-left">
       <a class="btn" href="{{ url_for('home') }}">Home</a>
@@ -1482,8 +1593,7 @@ BASE_HTML = """
         <span class="nav-hello">Hi, {{ current_user.username }}</span>
         <a class="btn" href="{{ url_for('logout') }}">Log out</a>
       {% else %}
-        <a class="btn" href="{{ url_for('login') }}">Log in</a>
-        <a class="btn" href="{{ url_for('register') }}">Sign up</a>
+        <span class="nav-hello">Hi, there</span>
       {% endif %}
     </div>
   </nav>
@@ -1915,6 +2025,7 @@ SETLISTS_LIST_HTML = """
         </div>
       </div>
         <div class="right">
+        <a class="btn" href="{{ url_for('live_mode', setlist_id=sl.id) }}" target="_blank" title="Open Live Mode">🎛️ Live Mode</a>
         <a class="btn" href="{{ url_for('edit_setlist', setlist_id=sl.id) }}">Open</a>
         <a class="btn" href="{{ url_for('view_setlist', setlist_id=sl.id) }}" target="_blank">🔗 Share</a>
         <a class="btn" href="{{ url_for('print_setlist', setlist_id=sl.id) }}" target="_blank">🖨️ Print</a>
@@ -3367,7 +3478,7 @@ document.addEventListener('DOMContentLoaded', function(){
 # Live Mode page template (Jinja)
 LIVE_HTML = """
 <!doctype html>
-<html>
+<html id="liveRoot" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <title>Live Mode — {{ sl.name }}</title>
@@ -3499,6 +3610,9 @@ LIVE_HTML = """
       text-transform:uppercase;
       letter-spacing:0.12em;
     }
+    [data-theme="light"] .chart-directive {
+  color: #222 !important;
+}
     .chart-comment {
       font-style:italic;
       color:rgba(228,235,255,0.7);
@@ -3606,6 +3720,23 @@ LIVE_HTML = """
       background:#ffd166;
       color:#0f141e;
     }
+    [data-theme="light"] body {
+  background: #fff;
+  color: #111;
+}
+[data-theme="light"] .chart-wrapper {
+  background: #fff;
+  color: #222;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.08);
+}
+[data-theme="light"] .chart-line .chord {
+  background: #ffe066;
+  color: #111 !important;
+}
+[data-theme="light"] .chart-line .chord.highlighted {
+  background: #ffd600 !important;
+  color: #111 !important;
+}
     .controls .now { flex:1; text-align:center; opacity:0.8; min-width:160px; }
     .page-controls { display:flex; align-items:center; gap:8px; }
     .page-controls button { padding:6px 10px; }
@@ -3866,6 +3997,7 @@ LIVE_HTML = """
 </head>
 <body>
   <header>
+  <button id="themeToggle" class="btn" type="button" title="Toggle dark / light">🌗 Theme</button>
     <a class="btn" href="{{ url_for('edit_setlist', setlist_id=sl.id) }}">← Back</a>
     <h1>Live Mode — {{ sl.name }}</h1>
     <div class="spacer"></div>
@@ -5153,6 +5285,20 @@ let currentHighlightSet = new Set();
       show(start);
     })();
   </script>
+  <script>
+(function(){
+  const root = document.getElementById('liveRoot');
+  const btn = document.getElementById('themeToggle');
+  if (!root || !btn) return;
+  let theme = localStorage.getItem('liveTheme') || 'dark';
+  root.setAttribute('data-theme', theme);
+  btn.addEventListener('click', () => {
+    theme = (theme === 'dark') ? 'light' : 'dark';
+    root.setAttribute('data-theme', theme);
+    localStorage.setItem('liveTheme', theme);
+  });
+})();
+</script>
 </body>
 </html>
 """
