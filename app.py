@@ -89,7 +89,9 @@ db_url = os.getenv("DATABASE_URL", DEFAULT_SQLITE)
 
 # Render/Railway sometimes prefix with postgres:// – SQLAlchemy accepts postgresql://
 if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+    db_url = db_url.replace("postgres://", "postgresql+psycopg://", 1)
+elif db_url.startswith("postgresql://") and "+psycopg" not in db_url:
+    db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -3788,7 +3790,7 @@ let currentHighlightSet = new Set();
       if (/^N\\.?C\\.?$/i.test(normalized)) return true;
       if (/\\s/.test(normalized)) return false;
       if (!/^[A-Ga-g][#b]?/.test(normalized)) return false;
-      if (!/^[A-Ga-g][#b]?(?:add|sus|maj|min|aug|dim|m|M|[0-9]|[#b\/\+\-\(\)°ø])*$/i.test(normalized)) return false;
+      if (!/^[A-Ga-g][#b]?(?:add|sus|maj|min|aug|dim|m|M|[0-9]|[#b\\/\\+\\-\\(\\)°ø])*$/i.test(normalized)) return false;
       return true;
     }
 
