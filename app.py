@@ -3785,7 +3785,7 @@ let currentHighlightSet = new Set();
       if (!token) return false;
       const normalized = token.trim().replace(/\u266d/g, 'b').replace(/\u266f/g, '#');
       if (!normalized) return false;
-      if (/^N\.?C\.?$/i.test(normalized)) return true;
+      if (/^N\\.?C\\.?$/i.test(normalized)) return true;
       if (/\s/.test(normalized)) return false;
       if (!/^[A-Ga-g][#b]?/.test(normalized)) return false;
       if (!/^[A-Ga-g][#b]?(?:add|sus|maj|min|aug|dim|m|M|[0-9]|[#b\/\+\-\(\)°ø])*$/i.test(normalized)) return false;
