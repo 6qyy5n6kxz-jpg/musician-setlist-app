@@ -1021,6 +1021,7 @@ BASE_HTML = """
 <html>
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Setlist Genie</title>
 
   <!-- Base app styles (unchanged from yours) -->
@@ -1038,6 +1039,8 @@ BASE_HTML = """
     details { margin-top: 8px; }
     .right { text-align: right; display:flex; gap:6px; align-items:center; }
     form.inline { display: inline; }
+    nav.topnav { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:18px; }
+    nav.topnav .btn { font-size:0.95rem; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .section { padding: 10px 0; border-top: 1px solid #eee; margin-top: 10px; }
     .iconbtn { padding: 6px 8px; line-height: 1; }
@@ -1072,6 +1075,50 @@ BASE_HTML = """
       z-index: 9999;
     }
     .toast.show { opacity: 1; }
+
+    @media (max-width: 640px) {
+      body {
+        max-width: 100%;
+        margin: 18px auto 96px;
+        padding: 0 14px 40px;
+        font-size: 1.05rem;
+      }
+      h1 { font-size: clamp(1.75rem, 4.4vw, 2rem); }
+      h2 { font-size: clamp(1.45rem, 4vw, 1.8rem); }
+      nav.topnav {
+        display:flex;
+        gap:6px;
+        flex-wrap:wrap;
+        margin-bottom:12px;
+      }
+      nav.topnav .btn {
+        flex: 1 1 calc(50% - 6px);
+        text-align:center;
+        padding:10px;
+        font-size:0.98rem;
+      }
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      .btn {
+        padding:10px 14px;
+        font-size:0.95rem;
+      }
+      input, textarea, select {
+        font-size:1rem;
+        padding:10px 12px;
+      }
+      .section {
+        padding:12px;
+      }
+      .section > summary {
+        font-size:1.0rem;
+        padding:12px;
+      }
+      table {
+        font-size:0.95rem;
+      }
+    }
   </style>
 
   <!-- THEME VARIABLES (global, single source of truth) -->
@@ -1263,7 +1310,7 @@ BASE_HTML = """
   </script>
 
   <!-- Top nav with a single theme toggle button -->
-  <nav class="topnav" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+  <nav class="topnav">
     <a class="btn" href="{{ url_for('home') }}">Home</a>
     <a class="btn" href="{{ url_for('list_songs') }}">Songs</a>
     <a class="btn" href="{{ url_for('new_song') }}">Add Song</a>
