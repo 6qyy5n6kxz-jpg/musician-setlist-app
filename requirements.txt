@@ -7,3 +7,5 @@ qrcode[pil]
 requests
 python-dotenv
 pypdf
+gunicorn
+psycopg2-binary
