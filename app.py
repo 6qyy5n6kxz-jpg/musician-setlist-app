@@ -81,6 +81,9 @@ load_dotenv()
 
 from config import *
 
+# Request status choices
+REQUEST_STATUS_CHOICES = ["new", "queued", "done", "declined"]
+
 app = Flask(__name__)
 
 app.config["SECRET_KEY"] = FLASK_SECRET_KEY
@@ -1629,7 +1632,10 @@ CHORD_CHART_SCRIPT = r"""
 (function(){
   const textarea = document.getElementById('chordChartInput');
   const convertBtn = document.getElementById('chordChartConvertBtn');
-  if (!textarea || !convertBtn) return;
+  if (!textarea || !convertBtn) {
+    console.warn('Chord chart elements not found');
+    return;
+  }
 
   const sectionRegex = /^(?:\s*)((?:pre[\s-]?chorus|verse|chorus|bridge|intro|outro|tag|solo|vamp|ending|coda|interlude)(?:[\s:-]*\d+|\s*[A-Za-z]*)?)[\s:.!-]*$/i;
 
@@ -1656,14 +1662,11 @@ CHORD_CHART_SCRIPT = r"""
     const root = chordMatch[1];
     const suffix = chordMatch[2] || '';
     
-    // Allow empty suffix (bare note like "C", "Dm")
     if (!suffix) return true;
     
-    // Check if suffix contains only valid chord characters
     const validSuffix = /^(add|sus|maj|min|aug|dim|m|M|b|#|\/|\(|\)|0-9|7|9|11|13|\+|-|°|ø)*$/.test(suffix);
     if (!validSuffix) return false;
     
-    // Reject ambiguous 2-letter words (like "Do", "Re", "Am" when standing alone as likely lyrics)
     if (token.length === 2 && token === token[0].toUpperCase() + token[1].toLowerCase() && !/[#b]/.test(root)) {
       return false;
     }
@@ -1801,6 +1804,8 @@ CHORD_CHART_SCRIPT = r"""
       showToast('Chord chart formatted');
     }
   });
+  
+  console.log('Chord chart formatter initialized');
 })();
 """
 
@@ -2123,7 +2128,7 @@ def new_song():
 def edit_song(song_id: int):
     song = _song_or_404(song_id)
     _require_song_owner(song)
-    return render_template("songs/edit.html", song=song)
+    return render_template("songs/edit.html", song=song, chord_chart_script=CHORD_CHART_SCRIPT)
 
 
 @app.post("/songs/<int:song_id>")
