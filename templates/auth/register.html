@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Register</h2>
+<form method="post" action="{{ url_for('auth.register') }}">
+  <p><label>Username</label><br/><input name="username" required /></p>
+  <p><label>Email</label><br/><input name="email" type="email" required /></p>
+  <p><label>Password</label><br/><input name="password" type="password" required /></p>
+  <p><label>Confirm Password</label><br/><input name="password2" type="password" required /></p>
+  <p><button class="btn" type="submit">Register</button></p>
+</form>
+<p><a href="{{ url_for('auth.login') }}">Login</a></p>
+{% endblock %}

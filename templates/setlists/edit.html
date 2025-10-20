@@ -1,0 +1,1413 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% set autobuild_scope = autobuild_scope or 'mine' %}
+{% set autobuild_avoid_repeat = autobuild_avoid_repeat or False %}
+{% set autobuilt_recent = autobuilt_recent or False %}
+<h2>Edit Setlist</h2>
+<div id="slTopAnchor"></div>
+<p style="margin:6px 0 12px;"><a class="btn" href="{{ url_for('setlist_requests', setlist_id=setlist.id) }}">Audience Requests{% if pending_requests %} ({{ pending_requests }}){% endif %}</a></p>
+<style>.viewopts{display:none!important;}</style>
+<style>
+/* View Options toolbar */
+.viewopts {
+  display:flex; gap:8px; flex-wrap:wrap; align-items:center;
+  margin:6px 0 8px;
+}
+.viewopts .chip {
+  display:inline-flex; align-items:center; gap:8px;
+  padding:6px 10px; border:1px solid var(--btn-border, #bbb);
+  border-radius:999px; background:var(--btn-bg, #fff); color:var(--text, #111);
+  font-size:.92rem; line-height:1.2; cursor:pointer; user-select:none;
+}
+.viewopts .chip input[type="checkbox"]{ margin:0; }
+.viewopts .spacer { flex:1; }
+
+/* Dark theme awareness */
+[data-theme="dark"] .viewopts .chip { border-color:#4c4f54; background:#2a2b2e; color:#e9e9ea; }
+</style>
+<div id="editFormBlock">
+<form method="post" action="{{ url_for('update_setlist', setlist_id=setlist.id) }}">
+  <style>
+  #editFormBlock form{
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:16px;
+    padding:18px 20px 16px;
+    box-shadow:var(--card-shadow);
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+  #editFormBlock label{ font-weight:600; color:var(--text); }
+  #editFormBlock textarea{ min-height:100px; resize:vertical; }
+  #editFormBlock .grid{ gap:14px; }
+  @media (max-width:720px){
+    #editFormBlock form{ padding:16px 14px; }
+  }
+  </style>
+  <div class="grid">
+    <p><label>Name</label><br/><input name="name" required value="{{ setlist.name }}" /></p>
+    <p><label>Target Minutes</label><br/><input name="target_minutes" type="number" min="1" value="{{ setlist.target_minutes or '' }}" /></p>
+  </div>
+  <div class="grid">
+    <p><label>Event Type</label><br/><input name="event_type" value="{{ setlist.event_type or '' }}" placeholder="Wedding, Bar, Festival..." /></p>
+    <p><label>Venue Type</label><br/><input name="venue_type" value="{{ setlist.venue_type or '' }}" placeholder="Indoor, Outdoor..." /></p>
+  </div>
+    <p><label>Notes</label><br/><textarea name="notes" rows="2" placeholder="Any notes...">{{ setlist.notes or '' }}</textarea></p>
+  <style>
+/* compact, aligned control row */
+.formline {
+  display:flex;
+  gap:12px;
+  align-items:center;
+  flex-wrap:wrap;
+  margin:4px 0 0;
+  padding-top:12px;
+  border-top:1px solid var(--border);
+}
+.formline .spacer { flex:1; }
+.formline .switch { display:inline-flex; gap:8px; align-items:center; font-weight:500; }
+.formline .switch input { margin:0; }
+</style>
+<div class="formline">
+  <label class="switch" title="Skip adding songs when the same artist is already in this setlist">
+    <input type="checkbox" name="no_repeat_artists" value="1" {{ 'checked' if setlist.no_repeat_artists else '' }} />
+    No repeat artists
+  </label>
+
+  <label class="switch" title="In Print/PDF, numbering restarts at each section header">
+    <input type="checkbox" name="reset_numbering_per_section" value="1" {% if setlist.reset_numbering_per_section %}checked{% endif %} />
+    Reset numbering per section
+  </label>
+
+  <span class="spacer"></span>
+  <button class="btn" type="submit">Save Details</button>
+</div>
+</form>
+</div>
+<div class="viewopts" role="group" aria-label="View options">
+  <label class="chip" title="Move the current setlist card above the builder panels">
+    <input type="checkbox" id="setlistFirstToggle" />
+    Setlist at top
+  </label>
+
+  <label class="chip" title="Keep Event Presets & Auto-build collapsed by default">
+    <input type="checkbox" id="compactModeToggle" />
+    Compact extras
+  </label>
+
+  <label class="chip" title="Hide per-song notes in Print/PDF exports">
+    <input type="checkbox" id="hideNotesToggle" />
+    Hide notes (print)
+  </label>
+
+  <span class="spacer" aria-hidden="true"></span>
+  <a class="btn" href="#current-setlist" title="Jump down to the current setlist">🎯 Current setlist</a>
+</div>
+
+<div class="section" style="margin-top:16px;">
+  <h3>Export & Share</h3>
+<form method="get" action="{{ export_pdf_url }}" target="_blank" style="display:flex; flex-wrap:wrap; gap:12px; align-items:center;">
+    <label style="display:flex; gap:6px; align-items:center;">
+      <input type="checkbox" name="include_charts" value="1" checked /> Append charts
+    </label>
+    <label style="display:flex; gap:6px; align-items:center;">
+      <input type="checkbox" name="include_requests" value="1" {% if pending_requests %}checked{% endif %} /> Include request summary
+    </label>
+    <label style="display:flex; gap:6px; align-items:center;">
+      <input type="checkbox" name="hide_notes" value="1" /> Hide notes
+    </label>
+    <button class="btn" type="submit">⬇️ PDF</button>
+    <span class="muted" style="flex:1; min-width:220px;">PDF always includes the song list summary; charts are appended when available.</span>
+  </form>
+  <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
+    <a class="btn" href="{{ url_for('export_songs_csv') }}">⬇️ Songs CSV</a>
+    <a class="btn" href="{{ export_csv_url }}">⬇️ Setlist CSV</a>
+    <a class="btn" href="{{ export_chopro_url }}">ChordPro Text</a>
+    <a class="btn" href="{{ export_chopro_zip_url }}">ChordPro Pack (.zip)</a>
+    <a class="btn" href="{{ url_for('setlist_requests', setlist_id=setlist.id) }}" target="_blank">Requests Console{% if pending_requests %} ({{ pending_requests }}){% endif %}</a>
+    <a class="btn" href="{{ url_for('view_setlist', setlist_id=setlist.id) }}" target="_blank">Viewer</a>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  const SETLIST_ID = {{ setlist.id }};
+
+  // -------------------------
+  // Compact Mode (persisting)
+  // -------------------------
+  (function(){
+    const KEY = 'sg:compact:' + String(SETLIST_ID);
+    const cb = document.getElementById('compactModeToggle');
+    const panels = [
+  document.getElementById('sec-buildtools'),
+  document.getElementById('sec-addsongs'),
+  document.getElementById('tools-panel'),
+].filter(Boolean);
+
+    function apply(compact){
+      if (!panels.length) return;
+      if (compact){
+        // Close collapsible sections when compact is ON
+        panels.forEach(p => p.removeAttribute('open'));
+      }
+      // When OFF we respect the user's manual open/close state
+    }
+
+    let saved = false;
+    try { saved = JSON.parse(localStorage.getItem(KEY) || 'false'); } catch(_){}
+    function persist(value){
+      try { localStorage.setItem(KEY, JSON.stringify(value)); } catch(_){}
+    }
+    function setCompact(value, options){
+      const opts = options || {};
+      cb.checked = !!value;
+      if (opts.persist !== false) persist(cb.checked);
+      apply(cb.checked);
+      if (!opts.silent && typeof showToast === 'function'){
+        showToast(cb.checked ? 'Compact mode on' : 'Compact mode off');
+      }
+    }
+    setCompact(saved, {persist:false, silent:true});
+
+    cb.addEventListener('change', () => setCompact(cb.checked));
+
+    window.sgCompactMode = {
+      set(value, options){ setCompact(value, options); },
+      current(){ return cb.checked; },
+    };
+  })();
+
+   // -----------------------------------------
+  // Show Current Setlist at top (persisting)
+  // -----------------------------------------
+  (function(){
+    const KEY = 'sg:setlistFirst:' + String(SETLIST_ID);
+    const cb = document.getElementById('setlistFirstToggle');
+
+    function targetBeforeNode(){
+      // Insert before the first of these sections if present
+      return document.getElementById('sec-event-presets')
+          || document.getElementById('sec-autobuild')
+          || document.getElementById('sec-addsongs')
+          || null;
+    }
+
+    function apply(atTop){
+      const block = document.getElementById('current-setlist');
+      if (!block || !block.parentNode) return;
+
+      if (atTop){
+        const before = targetBeforeNode();
+        if (before && before.parentNode){
+          before.parentNode.insertBefore(block, before);
+        } else {
+          block.parentNode.insertBefore(block, block.parentNode.firstChild);
+        }
+      } else {
+        // Restore to just after Add songs → else Auto-build → else Event Presets
+        const afterA = document.getElementById('sec-addsongs');
+        const afterB = document.getElementById('sec-autobuild');
+        const afterC = document.getElementById('sec-event-presets');
+        const anchor = afterA || afterB || afterC;
+        if (anchor && anchor.parentNode){
+          anchor.parentNode.insertBefore(block, anchor.nextSibling);
+        }
+      }
+    }
+
+    function persist(value){
+      try { localStorage.setItem(KEY, JSON.stringify(value)); } catch(_){}
+    }
+
+    function setSetlistFirst(value, options){
+      const opts = options || {};
+      cb.checked = !!value;
+      if (opts.persist !== false) persist(cb.checked);
+      apply(cb.checked);
+      if (!opts.silent && typeof showToast === 'function'){
+        showToast(cb.checked ? 'Setlist moved to top' : 'Setlist restored');
+      }
+    }
+
+    let initial = true;
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw !== null) {
+        initial = !!JSON.parse(raw);
+      }
+    } catch(_){ /* keep default */ }
+    setSetlistFirst(initial, {persist:false, silent:true});
+
+    cb.addEventListener('change', () => setSetlistFirst(cb.checked));
+
+    window.sgSetlistFirst = {
+      set(value, options){ setSetlistFirst(value, options); },
+      current(){ return cb.checked; },
+    };
+  })();
+
+  (function(){
+    const wasAutobuilt = {{ 'true' if autobuilt_recent else 'false' }};
+    if (!wasAutobuilt) return;
+    if (window.sgSetlistFirst) {
+      window.sgSetlistFirst.set(true, {silent:true});
+    }
+    if (window.sgCompactMode) {
+      window.sgCompactMode.set(true, {silent:true});
+    }
+    const buildTools = document.getElementById('sec-buildtools');
+    if (buildTools) buildTools.removeAttribute('open');
+    const toolsPanel = document.getElementById('tools-panel');
+    if (toolsPanel) toolsPanel.removeAttribute('open');
+
+    const params = new URLSearchParams(window.location.search);
+    params.delete('autobuilt');
+    if ({{ 'true' if autobuild_avoid_repeat else 'false' }}){
+      params.set('avoid_repeat', '1');
+    } else {
+      params.delete('avoid_repeat');
+    }
+    const newQuery = params.toString();
+    const newUrl = window.location.pathname + (newQuery ? '?' + newQuery : '') + window.location.hash;
+    window.history.replaceState({}, document.title, newUrl);
+  })();
+});
+</script>
+<details class="section" id="sec-buildtools">
+  <summary>
+    ⚙️ Build tools
+    <span class="muted summary-note">(presets & auto-build)</span>
+  </summary>
+
+  <style>
+    .tabs { display:flex; gap:6px; border-bottom:1px solid var(--border,#ddd); margin:6px 0 10px; }
+    .tabs .tab {
+      padding:6px 10px; border:1px solid var(--border,#ddd); border-bottom:none;
+      border-radius:8px 8px 0 0; cursor:pointer; background:var(--btn-bg,#fff);
+    }
+    .tabs .tab[aria-selected="true"] { font-weight:600; }
+    .tabpanel { display:none; }
+    .tabpanel.active { display:block; }
+    [data-theme="dark"] .tabs .tab { background:#2a2b2e; border-color:#4c4f54; }
+    .scope-fieldset {
+      margin:14px 0 10px;
+      padding:10px 14px;
+      border:1px solid var(--border,#ddd);
+      border-radius:10px;
+      display:flex;
+      gap:16px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .scope-fieldset legend {
+      font-weight:600;
+      margin-right:8px;
+      padding:0 4px;
+    }
+    .scope-fieldset label {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      font-weight:500;
+    }
+    [data-theme="dark"] .scope-fieldset {
+      border-color:#3c3d40;
+      background:#1f2227;
+    }
+  </style>
+
+  <div class="tabs" role="tablist" aria-label="Build tools">
+    <button type="button" class="tab" id="tab-presets" role="tab" aria-controls="panel-presets" aria-selected="true">Event presets</button>
+    <button type="button" class="tab" id="tab-autobuild" role="tab" aria-controls="panel-autobuild" aria-selected="false">Auto-build</button>
+  </div>
+
+  <!-- PANEL: Event Presets -->
+  <div id="panel-presets" class="tabpanel active" role="tabpanel" aria-labelledby="tab-presets">
+    <div style="margin-top:2px; display:flex; gap:8px; flex-wrap:wrap;">
+
+      <!-- Wedding preset -->
+      <form class="inline" method="post" action="{{ url_for('update_setlist', setlist_id=setlist.id) }}">
+        <input type="hidden" name="name" value="{{ setlist.name }}" />
+        <input type="hidden" name="target_minutes" value="120" />
+        <input type="hidden" name="event_type" value="Wedding" />
+        <input type="hidden" name="venue_type" value="Banquet Hall" />
+        <input type="hidden" name="notes" value="{{ setlist.notes or '' }}" />
+        <button class="btn" type="submit" title="120 min · Wedding · Banquet Hall">💍 Wedding</button>
+      </form>
+
+      <!-- Bar/Night preset -->
+      <form class="inline" method="post" action="{{ url_for('update_setlist', setlist_id=setlist.id) }}">
+        <input type="hidden" name="name" value="{{ setlist.name }}" />
+        <input type="hidden" name="target_minutes" value="90" />
+        <input type="hidden" name="event_type" value="Bar/Night" />
+        <input type="hidden" name="venue_type" value="Bar" />
+        <input type="hidden" name="notes" value="{{ setlist.notes or '' }}" />
+        <button class="btn" type="submit" title="90 min · Bar/Night · Bar">🍻 Bar/Night</button>
+      </form>
+
+      <!-- Festival preset -->
+      <form class="inline" method="post" action="{{ url_for('update_setlist', setlist_id=setlist.id) }}">
+        <input type="hidden" name="name" value="{{ setlist.name }}" />
+        <input type="hidden" name="target_minutes" value="45" />
+        <input type="hidden" name="event_type" value="Festival" />
+        <input type="hidden" name="venue_type" value="Outdoor Stage" />
+        <input type="hidden" name="notes" value="{{ setlist.notes or '' }}" />
+        <button class="btn" type="submit" title="45 min · Festival · Outdoor Stage">🎪 Festival</button>
+      </form>
+
+      <!-- Coffeehouse preset -->
+      <form class="inline" method="post" action="{{ url_for('update_setlist', setlist_id=setlist.id) }}">
+        <input type="hidden" name="name" value="{{ setlist.name }}" />
+        <input type="hidden" name="target_minutes" value="60" />
+        <input type="hidden" name="event_type" value="Coffeehouse" />
+        <input type="hidden" name="venue_type" value="Cafe" />
+        <input type="hidden" name="notes" value="{{ setlist.notes or '' }}" />
+        <button class="btn" type="submit" title="60 min · Coffeehouse · Cafe">☕ Coffeehouse</button>
+      </form>
+
+    </div>
+  </div>
+
+  <!-- PANEL: Auto-build -->
+  <div id="panel-autobuild" class="tabpanel" role="tabpanel" aria-labelledby="tab-autobuild">
+    <div style="margin-top:2px;">
+      <form method="post" action="{{ url_for('autobuild_setlist', setlist_id=setlist.id) }}">
+        <div class="grid">
+          <p>
+            <label>Target length (minutes)</label><br/>
+            <input name="target_minutes" type="number" min="5" value="{{ setlist.target_minutes or 45 }}" />
+          </p>
+          <p>
+            <label>Vibe</label><br/>
+            <select name="vibe">
+              <option value="mixed">Mixed</option>
+              <option value="chill">Chill</option>
+              <option value="energetic">Energetic</option>
+            </select>
+          </p>
+        </div>
+        <div class="grid">
+          <p>
+            <label>Require tags (comma-separated)</label><br/>
+            <input name="tags" placeholder="wedding, upbeat" />
+          </p>
+          <p>
+            <label>Require genres (comma-separated)</label><br/>
+            <input name="genres" placeholder="pop, rock" />
+          </p>
+        </div>
+        <fieldset class="scope-fieldset">
+          <legend>Song source</legend>
+          <label>
+            <input type="radio" name="scope" value="mine" {% if autobuild_scope == 'mine' %}checked{% endif %} />
+            My songs
+          </label>
+          <label>
+            <input type="radio" name="scope" value="shared" {% if autobuild_scope == 'shared' %}checked{% endif %} />
+            Shared catalog
+          </label>
+          <label>
+            <input type="radio" name="scope" value="all" {% if autobuild_scope == 'all' %}checked{% endif %} />
+            My + shared
+          </label>
+          <label title="Adds a curated batch of suggestions and fills any gaps automatically.">
+            <input type="radio" name="scope" value="ai" {% if autobuild_scope == 'ai' %}checked{% endif %} />
+            AI recommendations
+          </label>
+        </fieldset>
+        <p style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+          <label style="display:inline-flex; gap:8px; align-items:center; margin:0;">
+            <input type="checkbox" name="avoid_same_artist" value="1" {% if autobuild_avoid_repeat %}checked{% endif %} />
+            Avoid repeating the same artist
+          </label>
+          <label style="display:inline-flex; gap:8px; align-items:center; margin:0;">
+            <input type="checkbox" name="clear_first" value="1" />
+            Clear current setlist first
+          </label>
+        </p>
+        <p><button class="btn" type="submit">Auto-build</button></p>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      const tabs = Array.from(document.querySelectorAll('#sec-buildtools .tab'));
+      const panels = {
+        presets: document.getElementById('panel-presets'),
+        autobuild: document.getElementById('panel-autobuild')
+      };
+      function select(which){
+        tabs.forEach(t => t.setAttribute('aria-selected', String(t.id==='tab-'+which)));
+        panels.presets.classList.toggle('active', which==='presets');
+        panels.autobuild.classList.toggle('active', which==='autobuild');
+      }
+      document.getElementById('tab-presets').addEventListener('click', () => select('presets'));
+      document.getElementById('tab-autobuild').addEventListener('click', () => select('autobuild'));
+    })();
+  </script>
+</details>
+<!-- Compact actions toolbar -->
+<div class="section" id="actionsBar" style="margin:8px 0; padding:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+  <!-- Primary quick actions -->
+  <a class="btn" href="{{ live_mode_url }}" target="_blank" title="Open Live Mode">🎛️ Live Mode</a>
+  <a class="btn" href="{{ url_for('print_setlist', setlist_id=setlist.id) }}" target="_blank" title="Open print-friendly view">🖨️ Print</a>
+
+  <!-- Export menu -->
+  <div class="dropdown" id="exportMenu">
+    <button class="btn" type="button" data-dd-toggle="export">⬇️ Export ▾</button>
+    <div class="dd" data-dd="export" role="menu" style="display:none;">
+      <a class="item" href="{{ export_pdf_url }}" title="Download PDF">PDF</a>
+      <a class="item" href="{{ export_csv_url }}" title="Download CSV">CSV</a>
+    </div>
+  </div>
+
+  <!-- Share menu -->
+  <div class="dropdown" id="shareMenu">
+    <button class="btn" type="button" data-dd-toggle="share">🔗 Share ▾</button>
+    <div class="dd" data-dd="share" role="menu" style="display:none;">
+      <a class="item" href="{{ share_internal_url }}" target="_blank">Share View (internal)</a>
+      <a class="item" href="{{ share_create_url }}">Create/Copy Secret Link</a>
+      <a class="item" href="{{ share_rotate_url }}" onclick="return confirm('Rotate (revoke) the existing secret link and create a new one?');">Rotate Secret Link</a>
+      <a class="item" href="{{ share_qr_url }}" target="_blank">Show QR</a>
+    </div>
+  </div>
+
+  <span class="spacer" style="flex:1;"></span>
+
+  <!-- Duplicates (kept as buttons) -->
+  <form class="inline" method="post" action="{{ url_for('duplicate_setlist', setlist_id=setlist.id) }}">
+    <button class="btn" type="submit" title="Duplicate this setlist">📄 Duplicate</button>
+  </form>
+  <form class="inline" method="post" action="{{ url_for('duplicate_setlist_newshow', setlist_id=setlist.id) }}">
+    <button class="btn" type="submit" title="Copy setlist but clear per-song notes and section labels">🆕 Duplicate as New Show</button>
+  </form>
+</div>
+
+<style>
+  /* Dropdown styles (light/dark aware via existing theme vars) */
+  .dropdown { position: relative; }
+  .dropdown .dd{
+    position:absolute; top:100%; left:0; min-width:180px;
+    background: var(--btn-bg,#fff); color: var(--text,#111);
+    border:1px solid var(--btn-border,#bbb); border-radius:10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.12);
+    padding:6px; z-index: 10;
+  }
+  .dropdown .dd .item{
+    display:block; padding:6px 8px; border-radius:8px; text-decoration:none;
+    color: inherit; border:1px solid transparent;
+  }
+  .dropdown .dd .item:hover{ background: var(--surface,#f7f7f8); border-color: var(--border,#ddd); }
+</style>
+
+<script>
+  // Tiny dropdown controller; also closes on outside click / Esc
+  (function(){
+    function openWhich(name, open){
+      document.querySelectorAll('.dropdown .dd').forEach(dd=>{
+        const isTarget = dd.getAttribute('data-dd')===name;
+        dd.style.display = (open && isTarget) ? 'block' : 'none';
+      });
+    }
+    document.addEventListener('click', (e)=>{
+      const btn = e.target.closest('[data-dd-toggle]');
+      if (btn){
+        const name = btn.getAttribute('data-dd-toggle');
+        const dd   = document.querySelector('.dd[data-dd="'+name+'"]');
+        const willOpen = dd && dd.style.display!=='block';
+        openWhich(name, willOpen);
+      } else {
+        // Clicked elsewhere → close all
+        openWhich('', false);
+      }
+    });
+    document.addEventListener('keydown', (e)=>{
+      if (e.key==='Escape') openWhich('', false);
+    });
+  })();
+</script>
+<p style="margin:6px 0; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+  <a class="btn" href="#current-setlist">🎯 Jump to Current Setlist</a>
+</p>
+<script>
+<style>
+.viewopts .chip:has(input:focus-visible){
+  outline:2px solid #6aa9ff; outline-offset:2px;
+}
+[data-theme="dark"] .viewopts .chip:has(input:focus-visible){
+  outline-color:#8ec2ff;
+}
+</style>
+(function(){
+  const SETLIST_ID = {{ setlist.id }};
+  const KEY = 'sg:hideNotesPrint:' + String(SETLIST_ID);
+
+  const cb = document.getElementById('hideNotesToggle');
+  const pdfLink = document.querySelector('a.btn[href$="/export.pdf"]');
+  const printLink = document.querySelector('a.btn[href*="/print"]');
+
+  if (!cb || !(pdfLink || printLink)) return;
+
+  // helpers
+  function setParam(url, key, val) {
+    try {
+      const u = new URL(url, window.location.origin);
+      if (val === null) u.searchParams.delete(key);
+      else u.searchParams.set(key, String(val));
+      return u.pathname + (u.search ? u.search : '') + (u.hash || '');
+    } catch (_) {
+      // fallback simple appender
+      if (val === null) return url.replace(new RegExp('[?&]'+key+'=1\\b'), '');
+      return url + (url.includes('?') ? '&' : '?') + key + '=1';
+    }
+  }
+
+  function applyToLinks(checked) {
+    if (pdfLink)  pdfLink.href  = setParam(pdfLink.getAttribute('href'),  'hide_notes', checked ? 1 : null);
+    if (printLink) printLink.href = setParam(printLink.getAttribute('href'), 'hide_notes', checked ? 1 : null);
+  }
+
+  // init from storage
+  let saved = false;
+  try { saved = JSON.parse(localStorage.getItem(KEY) || 'false'); } catch(_) {}
+  cb.checked = !!saved;
+  applyToLinks(cb.checked);
+
+  // persist + update links on change
+  cb.addEventListener('change', () => {
+    try { localStorage.setItem(KEY, JSON.stringify(cb.checked)); } catch(_) {}
+    applyToLinks(cb.checked);
+    if (typeof showToast === 'function') showToast(cb.checked ? 'Notes hidden in Print/PDF' : 'Notes shown in Print/PDF');
+  });
+})();
+</script>
+<script>
+(function(){
+  const setlistId = {{ setlist.id }};
+  const songCount = {{ setlist.songs|length }};
+  let compact = false;
+  try { compact = JSON.parse(localStorage.getItem('sg:compact:' + setlistId) || 'false'); } catch(_) {}
+
+  // Smart rule: if there are already several songs OR compact mode is on,
+  // keep these extras closed initially.
+  const shouldCollapse = compact || (songCount >= 3);
+
+  if (shouldCollapse) {
+    document.querySelectorAll('details.section[data-smart="1"]').forEach(d => {
+      d.removeAttribute('open');
+    });
+  }
+})();
+</script>
+<style>
+/* ===== Add songs panel (scoped to #sec-addsongs) ===== */
+
+/* Row layout */
+#sec-addsongs .row {
+  border: none !important;
+  padding: 8px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+#sec-addsongs .row label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+#sec-addsongs .row input[type="checkbox"] {
+  margin-top: 2px;
+  transform: translateY(1px);
+}
+#sec-addsongs .row .muted {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Right-side meta column on wide screens */
+#sec-addsongs .row > .muted {
+  margin-left: auto;
+  white-space: nowrap;
+  min-width: 220px;
+  text-align: right;
+}
+
+/* Search controls in this panel only */
+#sec-addsongs form[action*="/setlists/"][method="get"] { margin: 6px 0 8px; }
+#sec-addsongs form[action*="/setlists/"][method="get"] .btn {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+#sec-addsongs input[name="q"] { max-width: 420px; }
+
+/* Keep labels tidy inside Add Selected form */
+#sec-addsongs form[action$="/add_songs"] .row label { align-items: baseline; }
+#sec-addsongs form[action$="/add_songs"] .row strong { font-weight: 600; }
+
+/* “dupe artist” badge */
+#sec-addsongs .badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 999px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  color: var(--text);
+  opacity: 0.8;
+  vertical-align: middle;
+}
+
+/* Sticky Add Selected bar */
+#sec-addsongs .addselbar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  margin-top: 8px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  color: var(--text);
+}
+#sec-addsongs .addselbar .count { font-weight: 600; }
+#sec-addsongs .addselbar .btn {
+  padding: 8px 12px;
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  border-color: var(--btn-border);
+}
+
+/* Mobile */
+@media (max-width: 720px) {
+  #sec-addsongs .row { flex-direction: column; align-items: flex-start; }
+  #sec-addsongs .row > .muted {
+    text-align: left;
+    margin: 2px 0 0 28px;
+    min-width: 0;
+    white-space: normal;
+  }
+}
+</style>
+<details class="section" id="sec-addsongs">
+  <summary>
+    Add songs to this setlist
+  </summary>
+
+  {% if setlist.no_repeat_artists %}
+    <p class="muted" style="margin:6px 0 2px;">
+      No-repeat artists is ON — songs by artists already in this show will be skipped.
+    </p>
+  {% endif %}
+
+  <!-- Search -->
+  <form method="get" action="{{ url_for('edit_setlist', setlist_id=setlist.id) }}">
+    <input type="hidden" name="scope" value="{{ autobuild_scope }}" />
+    <input name="q" placeholder="Search your songs…" value="{{ q or '' }}" />
+    <p style="margin-top:8px;">
+      <button class="btn" type="submit">Search</button>
+      <a class="btn" href="{{ url_for('edit_setlist', setlist_id=setlist.id, scope=autobuild_scope, avoid_repeat=('1' if autobuild_avoid_repeat else None)) }}">Clear</a>
+    </p>
+  </form>
+
+  <!-- List + add selected -->
+  <form method="post" action="{{ url_for('add_songs_to_setlist', setlist_id=setlist.id) }}">
+    {% if songs %}
+      {% for s in songs %}
+        {% set is_dup = (setlist.no_repeat_artists and s.artist and (s.artist.lower() in existing_artists)) %}
+        <div class="row" data-dup="{{ '1' if is_dup else '0' }}">
+          <label>
+            <input type="checkbox" name="song_ids" value="{{ s.id }}" {% if is_dup %}disabled aria-disabled="true"{% endif %} />
+            <span>
+              <strong>{{ s.title }}</strong> — {{ s.artist }}
+              {% if is_dup %}
+                <span class="badge" title="Artist already in this setlist; skipped when adding">dupe artist</span>
+              {% endif %}
+            </span>
+          </label>
+          <div class="muted">
+            {% if s.musical_key %}Key: {{ s.musical_key }} · {% endif %}
+            {% if s.genre %}{{ s.genre }}{% endif %}
+          </div>
+        </div>
+      {% endfor %}
+
+      <!-- Sticky add/clear bar -->
+      <div id="addSelBar" class="addselbar" hidden>
+        <span class="count">0 selected</span>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn" id="addSelSubmit">Add Selected</button>
+          <button type="button" class="btn" id="addSelClear">Clear</button>
+        </div>
+      </div>
+    {% else %}
+      <p class="muted">No songs match your search.</p>
+    {% endif %}
+  </form>
+</details>
+<script>
+(function(){
+  const panel = document.getElementById('sec-addsongs');
+  if (!panel) return;
+
+  const form = panel.querySelector('form[action$="/add_songs"]');
+  if (!form) return;
+
+  const bar = document.getElementById('addSelBar');
+  const countEl = bar.querySelector('.count');
+  const addBtn = document.getElementById('addSelSubmit');
+  const clearBtn = document.getElementById('addSelClear');
+
+  function boxes(){ return Array.from(form.querySelectorAll('input[type="checkbox"][name="song_ids"]')); }
+  function update(){
+    const n = boxes().filter(b => b.checked).length;
+    countEl.textContent = n + ' selected';
+    bar.hidden = n === 0;
+  }
+  form.addEventListener('change', (e) => {
+    if (e.target && e.target.matches('input[type="checkbox"][name="song_ids"]')) update();
+  });
+  addBtn.addEventListener('click', () => {
+    if (boxes().some(b => b.checked)) form.submit();
+    else if (typeof showToast === 'function') showToast('Select at least one song');
+  });
+  clearBtn.addEventListener('click', () => { boxes().forEach(b => b.checked = false); update(); });
+  update();
+})();
+</script>
+<!-- Visual card polish for Current setlist (light/dark aware) -->
+<style>
+  /* Minimal, non-card styling for Current setlist */
+  #current-setlist {
+    background: transparent;
+    border: 0;
+    padding: 4px 0 6px;
+    box-shadow: none;
+    margin-top: 6px;
+    position: relative;
+  }
+  /* slender accent bar on the left */
+  #current-setlist::before {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0; left: -8px;
+    width: 3px;
+    border-radius: 3px;
+    background: rgba(0,0,0,.08);
+  }
+  /* gentle row separators */
+  #current-setlist .row {
+    border-bottom: 1px solid rgba(0,0,0,.06);
+    padding: 8px 0;
+  }
+  #current-setlist .row:last-of-type { border-bottom: none; }
+  #current-setlist > h3 { margin: 0 0 8px; }
+
+  /* Dark theme overrides (explicit app theme) */
+  [data-theme="dark"] #current-setlist::before { background: rgba(255,255,255,.10); }
+  [data-theme="dark"] #current-setlist .row    { border-bottom-color: rgba(255,255,255,.12); }
+
+  /* Fallback for system dark when no data-theme is set */
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme]) #current-setlist::before { background: rgba(255,255,255,.10); }
+    html:not([data-theme]) #current-setlist .row    { border-bottom-color: rgba(255,255,255,.12); }
+  }
+</style>
+<style>
+  /* Compact buttons and chips ONLY within the Current setlist area */
+  #current-setlist .btn {
+    padding: 4px 8px;
+    font-size: 12px;
+    line-height: 1.1;
+    border-radius: 8px;
+  }
+  #current-setlist .iconbtn.btn {
+    padding: 3px 6px;
+    font-size: 12px;
+  }
+  /* Give tool rows a little breathing room */
+  #current-setlist .row + .row { margin-top: 2px; }
+
+  /* Section overview chips on one tidy line with gentle wrap */
+  #current-setlist .muted a.btn,
+  #current-setlist a.btn[href^="#sec-"] {
+    padding: 2px 8px;
+    font-size: 12px;
+    border-color: #ddd;
+    color: inherit;
+  }
+  /* Reduce vertical gaps between toolbars at the very top of Current setlist */
+  #current-setlist > .btn,
+  #current-setlist form.inline {
+    margin-bottom: 4px;
+  }
+
+  /* Dark theme subtle borders */
+  [data-theme="dark"] #current-setlist a.btn[href^="#sec-"],
+  [data-theme="dark"] #current-setlist .muted a.btn { border-color: #3a3a3a; }
+
+  /* Small screens: keep things readable but compact */
+  @media (max-width: 720px) {
+    #current-setlist .btn { font-size: 11.5px; padding: 4px 7px; }
+    #current-setlist .iconbtn.btn { padding: 3px 5px; }
+  }
+</style>
+<style>
+  /* Compact summary look */
+  #tools-panel > summary { list-style: none; }
+  #tools-panel > summary::-webkit-details-marker { display: none; }
+  #tools-panel[open] > summary::after { content: ' ▾'; }
+  #tools-panel:not([open]) > summary::after { content: ' ▸'; }
+  #tools-panel .btn { margin-right: 4px; margin-bottom: 6px; }
+</style>
+<div id="current-setlist" class="section">
+  <h3>Current order ({{ setlist.songs|length }} songs) · ~Total {{ total_str }}</h3>
+  <details id="tools-panel" class="section">
+  <summary>
+    🧰 Tools
+  </summary>
+  <div style="margin-top:6px;">
+  <form class="inline" method="post" action="{{ url_for('clear_all_sections_v2', setlist_id=setlist.id) }}" style="margin:6px 0 10px;" onsubmit="return confirm('Remove ALL section labels?');">
+  <button class="btn btn-danger" type="submit" title="Remove every section header from this setlist">🗑️ Clear All Sections</button>
+</form>
+  <form class="inline" method="post" action="{{ url_for('apply_section_preset', setlist_id=setlist.id) }}" style="margin:6px 0 10px;">
+  <button class="btn" type="submit" title="Insert Set 1 / Break / Set 2 / Encore at sensible positions">✨ Section Preset</button>
+  <span class="muted">One click: Set 1 / Break / Set 2 / Encore</span>
+</form>
+<form class="inline" method="post" action="{{ url_for('preset_sections_three_sets', setlist_id=setlist.id) }}" style="margin:6px 0 10px;">
+  <button class="btn" type="submit" title="Insert Set 1 / Break / Set 2 / Break / Set 3 / Encore at sensible positions">✨ Three-Set Preset</button>
+  <span class="muted">Set 1 / Break / Set 2 / Break / Set 3 / Encore</span>
+</form>
+<form class="inline" method="post" action="{{ url_for('preset_sections_by_chunk', setlist_id=setlist.id) }}" style="margin:6px 0 10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+  <label class="muted" style="display:flex; align-items:center; gap:6px;">
+    Songs per set
+    <input name="chunk" type="number" min="1" max="50" value="8" style="width:80px; padding:6px;">
+  </label>
+  <button class="btn" type="submit" title="Apply Set/Break blocks every N songs and add an Encore at the end">✨ Chunk Preset</button>
+  <span class="muted">Sets of N songs → Break → next Set → … → Encore</span>
+</form>
+<form class="inline" method="post" action="{{ url_for('renumber_sets', setlist_id=setlist.id) }}" style="margin:6px 0 10px;">
+  <button class="btn" type="submit" title="Rename visible 'Set …' headers sequentially after reordering">🔢 Renumber Set Labels</button>
+  <span class="muted">Updates “Set …” headers to Set 1, Set 2, Set 3…</span>
+</form>
+<form class="inline" method="post" action="{{ url_for('fix_encore', setlist_id=setlist.id) }}" style="margin:6px 0 10px;">
+  <button class="btn" type="submit" title="Remove stray Encores and ensure a single Encore on the last song">🎯 Fix Encore</button>
+  <span class="muted">Ensures exactly one Encore at the end</span>
+</form>
+    {% if section_overview and section_overview|length > 0 %}
+  <div class="muted" style="margin:6px 0 10px; display:flex; gap:8px; flex-wrap:wrap;">
+    {% for sec in section_overview %}
+      <a class="btn" href="#sec-{{ loop.index0 }}" style="padding:4px 8px; border-color:#ddd; text-decoration:none;">
+        {{ sec.name }} — {{ sec.count }} song{{ '' if sec.count == 1 else 's' }} · {{ fmt_mmss(sec.sec) }}
+      </a>
+    {% endfor %}
+  </div>
+  <p style="margin-top:10px;">
+  <a class="btn" href="#top">⬆️ Back to top</a>
+</p>
+  <form class="inline" method="post" action="{{ url_for('normalize_sections', setlist_id=setlist.id) }}" style="margin:4px 0 10px;">
+  <button class="btn" type="submit" title="Keep only the first occurrence of a repeated section label">🧼 Clean Section Headers</button>
+  <span class="muted">Removes duplicate consecutive headers with the same name.</span>
+</form>
+{% endif %}
+  {% if setlist.songs %}
+  {% set first_id = setlist.songs[0].song.id %}
+  <div style="margin:8px 0; display:flex; gap:8px; flex-wrap:wrap;">
+      <!-- One-click Section Preset -->
+    <form class="inline" method="post" action="{{ url_for('apply_section_preset', setlist_id=setlist.id) }}">
+      <button class="btn" type="submit"
+              title="Clears current section labels and inserts: Set 1 (top), Break (middle), Set 2 (after break), Encore (last)">
+        ⚡️ Section Preset: Set 1 / Break / Set 2 / Encore
+      </button>
+    </form>
+        <!-- Clear all section labels -->
+    <form class="inline" method="post" action="{{ url_for('clear_all_sections', setlist_id=setlist.id) }}"
+          onsubmit="return confirm('Remove ALL section labels from this setlist?');">
+      <button class="btn btn-danger" type="submit" title="Remove all section labels from every row">
+        🧽 Clear All Section Labels
+      </button>
+    </form>
+    <form class="inline" method="post" action="{{ url_for('update_setlist_section', setlist_id=setlist.id, song_id=first_id) }}">
+      <input type="hidden" name="section_name" value="Set 1">
+      <button class="btn" type="submit">🏁 Start “Set 1” at top</button>
+    </form>
+    <form class="inline" method="post" action="{{ url_for('update_setlist_section', setlist_id=setlist.id, song_id=first_id) }}">
+      <input type="hidden" name="section_name" value="Encore">
+      <button class="btn" type="submit">✨ Start “Encore” at top</button>
+    </form>
+  </div>
+{% endif %}
+    <p><a class="btn" href="{{ url_for('undo_order_route', setlist_id=setlist.id) }}">↩️ Undo Last Change</a></p>
+    <p id="reorderStatus" class="muted" style="display:none;"></p>
+    <p id="sectionCollapseToolbar" style="margin:6px 0;">
+  <button class="btn" type="button" id="btnCollapseAll">➖ Collapse all sections</button>
+  <button class="btn" type="button" id="btnExpandAll">➕ Expand all sections</button>
+</p>
+<script>
+(function(){
+  const collapseBtn = document.getElementById('btnCollapseAll');
+  const expandBtn = document.getElementById('btnExpandAll');
+  if (!collapseBtn || !expandBtn) return;
+
+  function sectionHeaders(){
+    // same detection as Step 101: section headers contain a .secmeta span
+    return Array.from(document.querySelectorAll('.row')).filter(r => r.querySelector('.secmeta'));
+  }
+
+  function collapseAll(){
+    sectionHeaders().forEach(h => { if (h.dataset.collapsed !== '1') h.click(); });
+    if (typeof showToast === 'function') showToast('Collapsed all sections');
+  }
+
+  function expandAll(){
+    sectionHeaders().forEach(h => { if (h.dataset.collapsed === '1') h.click(); });
+    if (typeof showToast === 'function') showToast('Expanded all sections');
+  }
+
+  collapseBtn.addEventListener('click', collapseAll);
+  expandBtn.addEventListener('click', expandAll);
+})();
+</script>
+   <p><button class="btn" type="button" id="toggleReorder">🧲 Reorder mode: Off</button></p>
+     </div>
+</details>
+<script>
+(function(){
+  const panel = document.getElementById('tools-panel');
+  if (!panel) return;
+
+  // Persisted open/closed per-setlist
+  const KEY = 'sg:toolsOpen:' + String({{ setlist.id }});
+
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(panel.open)); } catch(e){}
+  }
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch(e){ return null; }
+  }
+
+  // First-time smart default: closed if many songs, open if tiny/empty
+  const saved = load();
+  if (saved === null) {
+    panel.open = ({{ setlist.songs|length }} <= 2);
+  } else {
+    panel.open = !!saved;
+  }
+
+  panel.addEventListener('toggle', save);
+})();
+</script>
+  {% if setlist.songs %}
+    {% for ss in setlist.songs %}
+
+  {# ---- SECTION DIVIDER (shows before the labeled song) ---- #}
+  {% if ss.section_name %}
+  {% set __sec_index = (__sec_index + 1) if __sec_index is defined else 0 %}
+  {% set info = section_overview[__sec_index] if section_overview and __sec_index < section_overview|length else None %}
+  <div id="sec-{{ __sec_index }}" class="row section-divider">
+    <div class="section-divider__inner">
+      <div class="section-divider__label">
+        <span class="section-divider__name">— {{ ss.section_name }} —</span>
+        {% if info %}
+          <span class="secmeta">
+            {{ info.count }} · {{ fmt_mmss(info.sec) }}
+          </span>
+        {% endif %}
+      </div>
+      <div class="section-divider__actions">
+        <!-- Move section UP -->
+        <form class="inline" method="post" action="{{ url_for('move_section_block', setlist_id=setlist.id) }}">
+          <input type="hidden" name="idx" value="{{ __sec_index }}">
+          <input type="hidden" name="dir" value="up">
+          <button class="btn iconbtn" type="submit" title="Move section up">⬆️</button>
+        </form>
+        <!-- Move section DOWN -->
+        <form class="inline" method="post" action="{{ url_for('move_section_block', setlist_id=setlist.id) }}">
+          <input type="hidden" name="idx" value="{{ __sec_index }}">
+          <input type="hidden" name="dir" value="down">
+          <button class="btn iconbtn" type="submit" title="Move section down">⬇️</button>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+  {# ---- SONG ROW ---- #}
+  <div class="row dnd-item" data-song-id="{{ ss.song.id }}" data-locked="{{ 1 if ss.locked else 0 }}">
+    <div style="flex:1;">
+      #{{ ss.position }} — <strong>{{ ss.song.title }}</strong> — {{ ss.song.artist }}
+      <div class="muted">
+        ~{{ estimates[ss.song.id] }}
+        {% if ss.notes %} · <em>Notes:</em> {{ ss.notes }}{% endif %}
+        {% if ss.song.release_year %} · Year: {{ ss.song.release_year }}{% endif %}
+        {% if ss.song.files|length %}<span title="Has PDF">📄</span>{% endif %}
+      </div>
+
+      <!-- per-row NOTES form (already existed) -->
+      <form class="inline" method="post" action="{{ url_for('update_setlist_song_notes', setlist_id=setlist.id, song_id=ss.song.id) }}" style="margin-top:6px; display:flex; gap:6px; align-items:center;">
+        <input name="notes" placeholder="capo 2 · start on chorus · stop at 2:45" value="{{ ss.notes or '' }}" style="max-width:420px;" />
+        <button class="btn" type="submit" title="Save notes for this song">💾 Save</button>
+      </form>
+
+           <!-- Per-row SECTION label form + quick chips -->
+      <form class="inline"
+      method="post"
+      action="{{ url_for('update_setlist_section', setlist_id=setlist.id, song_id=ss.song.id) }}"
+      style="margin-top:6px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+
+  <input name="section_name"
+         placeholder="Set 1 / Break / Encore"
+         value="{{ ss.section_name or '' }}"
+         style="max-width:220px;" />
+
+  <button class="btn" type="submit" title="Set/rename section starting at this song">🏷️ Label here</button>
+
+  {% if ss.section_name %}
+    <button class="btn btn-danger" name="section_name" value="" type="submit" title="Remove section label">✖︎</button>
+  {% endif %}
+
+  <div class="muted" style="display:flex; gap:6px; flex-wrap:wrap; margin-left:6px;">
+    <button class="btn iconbtn" type="submit" name="section_name" value="Set 1">Set 1</button>
+    <button class="btn iconbtn" type="submit" name="section_name" value="Break">Break</button>
+    <button class="btn iconbtn" type="submit" name="section_name" value="Set 2">Set 2</button>
+    <button class="btn iconbtn" type="submit" name="section_name" value="Encore">Encore</button>
+  </div>
+</form>
+    </div>
+    <!-- Quick Section presets (collapsed) -->
+<details class="rowmore" style="margin-top:4px;">
+  <summary class="btn" style="display:inline-block; padding:4px 8px;">More…</summary>
+  <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
+    <form class="inline" method="post" action="{{ url_for('update_setlist_section', setlist_id=setlist.id, song_id=ss.song.id) }}">
+      <input type="hidden" name="section_name" value="Set 1" />
+      <button class="btn iconbtn" type="submit" title="Start Set 1 here">🏁 Set 1</button>
+    </form>
+    <form class="inline" method="post" action="{{ url_for('update_setlist_section', setlist_id=setlist.id, song_id=ss.song.id) }}">
+      <input type="hidden" name="section_name" value="Break" />
+      <button class="btn iconbtn" type="submit" title="Insert Break here">☕ Break</button>
+    </form>
+    <form class="inline" method="post" action="{{ url_for('update_setlist_section', setlist_id=setlist.id, song_id=ss.song.id) }}">
+      <input type="hidden" name="section_name" value="Set 2" />
+      <button class="btn iconbtn" type="submit" title="Start Set 2 here">🎬 Set 2</button>
+    </form>
+    <form class="inline" method="post" action="{{ url_for('update_setlist_section', setlist_id=setlist.id, song_id=ss.song.id) }}">
+      <input type="hidden" name="section_name" value="Encore" />
+      <button class="btn iconbtn" type="submit" title="Start Encore here">✨ Encore</button>
+    </form>
+    <form class="inline" method="post" action="{{ url_for('update_setlist_section', setlist_id=setlist.id, song_id=ss.song.id) }}">
+      <input type="hidden" name="section_name" value="" />
+      <button class="btn iconbtn" type="submit" title="Remove section label at this row">🧹 Clear</button>
+    </form>
+  </div>
+</details>
+    <div class="right">
+      {% if current_user.is_authenticated and ss.song.user_id != current_user.id %}
+      <form class="inline" method="post" action="{{ url_for('songs_clone_to_user', song_id=ss.song.id) }}">
+        <input type="hidden" name="next" value="{{ request.full_path }}">
+        <input type="hidden" name="row_id" value="{{ ss.id }}">
+        <button class="btn" type="submit">Save to My Songs</button>
+      </form>
+      {% endif %}
+      <form class="inline" method="post" action="{{ url_for('setlist_toggle_lock', setlist_id=setlist.id, song_id=ss.song.id) }}">
+        <button class="btn iconbtn" title="{{ 'Unlock to allow moves' if ss.locked else 'Lock to prevent moves' }}" type="submit">{{ '🔒' if ss.locked else '🔓' }}</button>
+      </form>
+      <form class="inline" method="post" action="{{ url_for('move_song_top', setlist_id=setlist.id, song_id=ss.song.id) }}">
+        <button class="btn iconbtn" title="Move to Top" type="submit">⤒</button>
+      </form>
+      <form class="inline" method="post" action="{{ url_for('move_song_up', setlist_id=setlist.id, song_id=ss.song.id) }}">
+        <button class="btn iconbtn" title="Move Up" type="submit">↑</button>
+      </form>
+      <form class="inline" method="post" action="{{ url_for('move_song_down', setlist_id=setlist.id, song_id=ss.song.id) }}">
+        <button class="btn iconbtn" title="Move Down" type="submit">↓</button>
+      </form>
+      <form class="inline" method="post" action="{{ url_for('move_song_bottom', setlist_id=setlist.id, song_id=ss.song.id) }}">
+        <button class="btn iconbtn" title="Move to Bottom" type="submit">⤓</button>
+      </form>
+      <form class="inline" method="post" action="{{ url_for('remove_song_from_setlist', setlist_id=setlist.id, song_id=ss.song.id) }}" onsubmit="return confirm('Remove this song from the setlist?');">
+        <button class="btn btn-danger" type="submit">Remove</button>
+      </form>
+    </div>
+  </div>
+
+{% endfor %}
+
+  {% else %}
+    <p class="muted">This setlist is empty. Use the form above to add songs or auto-build.</p>
+  {% endif %}
+</div>
+<script>
+(function () {
+  // Click-to-collapse/expand sections based on the presence of .secmeta in the header row
+  const sectionHeaders = Array.from(document.querySelectorAll('.row')).filter(r => r.querySelector('.secmeta'));
+  if (!sectionHeaders.length) return;
+
+  sectionHeaders.forEach(header => {
+    header.style.cursor = 'pointer';
+    header.setAttribute('title', 'Click to collapse/expand this section');
+    header.addEventListener('click', () => toggleSection(header));
+  });
+
+  function toggleSection(header) {
+    const collapsed = header.dataset.collapsed === '1';
+    let el = header.nextElementSibling;
+
+    if (!collapsed) {
+      // Hide rows until the next section header
+      while (el && !el.querySelector('.secmeta')) {
+        if (el.classList.contains('row')) el.style.display = 'none';
+        el = el.nextElementSibling;
+      }
+      header.dataset.collapsed = '1';
+    } else {
+      // Show rows until the next section header
+      while (el && !el.querySelector('.secmeta')) {
+        if (el.classList.contains('row')) el.style.display = '';
+        el = el.nextElementSibling;
+      }
+      header.dataset.collapsed = '0';
+    }
+  }
+
+  // Keyboard shortcuts: 'c' = collapse all, 'e' = expand all (ignored while typing in fields)
+  document.addEventListener('keydown', (e) => {
+    const tag = (e.target && e.target.tagName) || '';
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
+
+    if (e.key && e.key.toLowerCase() === 'c') {
+      sectionHeaders.forEach(h => { if (h.dataset.collapsed !== '1') h.click(); });
+      if (typeof showToast === 'function') showToast('Collapsed all sections');
+    }
+    if (e.key && e.key.toLowerCase() === 'e') {
+      sectionHeaders.forEach(h => { if (h.dataset.collapsed === '1') h.click(); });
+      if (typeof showToast === 'function') showToast('Expanded all sections');
+    }
+  });
+})();
+</script>
+<script>
+/* Persist collapsed/expanded state per setlist using localStorage */
+(function () {
+  // We key by setlist id so each setlist remembers its own collapsed sections
+  const SETLIST_ID = {{ setlist.id }};
+  const KEY = 'sg:collapsed:' + String(SETLIST_ID);
+
+  function getSectionHeaders() {
+    // A section header row is the .row that contains a .secmeta (added in Step 106)
+    return Array.from(document.querySelectorAll('.row')).filter(r => r.querySelector('.secmeta'));
+  }
+
+  function loadCollapsed() {
+    try { return JSON.parse(localStorage.getItem(KEY) || '[]'); }
+    catch (_) { return []; }
+  }
+
+  function saveCollapsed(indices) {
+    try { localStorage.setItem(KEY, JSON.stringify(indices)); } catch (_) {}
+  }
+
+  function refreshAndSave() {
+    const headers = getSectionHeaders();
+    const indices = [];
+    headers.forEach((h, i) => {
+      if (h.dataset.collapsed === '1') indices.push(i);
+    });
+    saveCollapsed(indices);
+  }
+
+  function applyInitialState() {
+    const wantCollapsed = new Set(loadCollapsed());
+    const headers = getSectionHeaders();
+
+    headers.forEach((h, i) => {
+      const shouldBeCollapsed = wantCollapsed.has(i);
+      const isCollapsed = h.dataset.collapsed === '1';
+      if (shouldBeCollapsed !== isCollapsed) {
+        // We reuse the existing click handler from Step 101 to toggle the section
+        h.click();
+      }
+    });
+  }
+
+  // After any section header click, save the new state.
+  document.addEventListener('click', (e) => {
+    const header = e.target.closest('.row');
+    if (header && header.querySelector('.secmeta')) {
+      // Let the original toggle logic run first, then snapshot
+      setTimeout(refreshAndSave, 0);
+    }
+  });
+
+  // Also refresh state after "Collapse all" / "Expand all" button presses
+  ['btnCollapseAll', 'btnExpandAll'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.addEventListener('click', () => setTimeout(refreshAndSave, 0));
+  });
+
+  // Apply remembered state on load
+  applyInitialState();
+})();
+</script>
+<script>
+(function(){
+  const toggleBtn = document.getElementById('toggleReorder');
+  const container = document.getElementById('current-setlist');
+  const statusEl = document.getElementById('reorderStatus');
+  const reorderUrl = "{{ reorder_url }}";
+  if (!toggleBtn || !container || !reorderUrl) return;
+
+  let active = false;
+  let dragItem = null;
+  let saveTimer = null;
+
+  function songItems() {
+    return Array.from(container.querySelectorAll('.dnd-item'));
+  }
+
+  function showStatus(message, kind = "") {
+    if (!statusEl) return;
+    statusEl.textContent = message || "";
+    statusEl.style.display = message ? "block" : "none";
+    statusEl.classList.remove("is-error", "is-success", "is-busy");
+    if (kind) statusEl.classList.add(kind);
+  }
+
+  function enableDrag(on) {
+    active = on;
+    const body = document.body;
+    if (!body) return;
+    if (on) {
+      body.classList.add('has-reorder');
+      toggleBtn.textContent = '🧲 Reorder mode: On';
+    } else {
+      body.classList.remove('has-reorder');
+      toggleBtn.textContent = '🧲 Reorder mode: Off';
+      showStatus('');
+    }
+    songItems().forEach(item => {
+      if (item.dataset.locked === "1") {
+        item.setAttribute('draggable', 'false');
+        return;
+      }
+      item.setAttribute('draggable', on ? 'true' : 'false');
+      item.classList.toggle('is-draggable', on);
+    });
+  }
+
+  function commitOrder() {
+    if (!active) return;
+    const ids = songItems().map(item => item.dataset.songId).filter(Boolean);
+    if (!ids.length) return;
+    showStatus('Saving order…', 'is-busy');
+    fetch(reorderUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: 'order=' + encodeURIComponent(ids.join(',')),
+    }).then(resp => {
+      if (!resp.ok) throw new Error('Save failed');
+      showStatus('Order updated ✓', 'is-success');
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => showStatus(''), 2500);
+    }).catch(err => {
+      console.error(err);
+      showStatus('Could not save order.', 'is-error');
+    });
+  }
+
+  function onDragStart(e) {
+    if (!active) {
+      e.preventDefault();
+      return;
+    }
+    dragItem = this;
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', this.dataset.songId || '');
+  }
+
+  function onDragEnd() {
+    this.classList.remove('dragging');
+    dragItem = null;
+    commitOrder();
+  }
+
+  function onDragOver(e) {
+    if (!active || !dragItem) return;
+    e.preventDefault();
+    const target = e.target.closest('.dnd-item');
+    if (!target || target === dragItem || target.dataset.locked === "1") return;
+
+    const rect = target.getBoundingClientRect();
+    const offset = e.clientY - rect.top;
+    const shouldMoveAfter = offset > rect.height / 2;
+    const parent = target.parentElement;
+    if (!parent) return;
+    if (shouldMoveAfter) {
+      parent.insertBefore(dragItem, target.nextElementSibling);
+    } else {
+      parent.insertBefore(dragItem, target);
+    }
+  }
+
+  function onKeydown(e) {
+    if (!active || !dragItem) return;
+    if (e.key === 'Escape') {
+      dragItem.classList.remove('dragging');
+      dragItem = null;
+    showStatus('Reorder cancelled.');
+    }
+  }
+
+  songItems().forEach(item => {
+    if (item.dataset.locked === "1") {
+      item.setAttribute('draggable', 'false');
+      return;
+    }
+    item.addEventListener('dragstart', onDragStart);
+    item.addEventListener('dragend', onDragEnd);
+  });
+
+  container.addEventListener('dragover', onDragOver);
+  container.addEventListener('drop', e => {
+    if (active) e.preventDefault();
+  });
+  document.addEventListener('keydown', onKeydown);
+
+  toggleBtn.addEventListener('click', () => {
+    enableDrag(!active);
+  });
+})();
+</script>
+<div id="slBottomAnchor"></div>
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  // Move Current setlist to the very top of the page content
+  const top = document.getElementById('slTopAnchor');
+  const cur = document.getElementById('current-setlist');
+  if (top && cur && top.parentNode) {
+    top.parentNode.insertBefore(cur, top.nextSibling);
+  }
+
+  // Collapse Build tools on Edit page (they still exist, now lower-traffic)
+  const bt = document.getElementById('sec-buildtools');
+  if (bt) bt.removeAttribute('open');
+
+  // Move the Edit Details form block to the bottom
+  const bottom = document.getElementById('slBottomAnchor');
+  const formBlock = document.getElementById('editFormBlock');
+  if (bottom && formBlock && bottom.parentNode) {
+    bottom.parentNode.appendChild(formBlock);
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Setlist Genie</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</head>
+<body>
+  <nav>
+    <div class="nav-left">
+      <a href="{{ url_for('home') }}">Home</a>
+      <a href="{{ url_for('list_songs') }}">Songs</a>
+      <a href="{{ url_for('list_setlists') }}">Setlists</a>
+    </div>
+    <div class="nav-right">
+      {% if current_user.is_authenticated %}
+        <span class="user-info" style="font-size: 0.9em; opacity: 0.8;">{{ current_user.username }}</span>
+        <a href="{{ url_for('auth.logout') }}">Logout</a>
+      {% else %}
+        <a href="{{ url_for('auth.login') }}">Login</a>
+        <a href="{{ url_for('auth.register') }}">Register</a>
+      {% endif %}
+      <button id="themeToggle" title="Toggle dark/light theme">🌗 Theme</button>
+    </div>
+  </nav>
+  <main>
+    {% if get_flashed_messages() %}
+      <div class="flashes">
+        {% for message in get_flashed_messages(with_categories=true) %}
+          <div class="flash {{ message[0] }}">{{ message[1] }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+    <div class="content">
+      {% block content %}
+      <h1>Setlist Genie</h1>
+      <p>Welcome to Setlist Genie, your ultimate tool for creating and managing setlists for musicians and performers.</p>
+      <p>Get started by <a href="{{ url_for('list_songs') }}">adding some songs</a> or <a href="{{ url_for('list_setlists') }}">creating a setlist</a>.</p>
+      {% if not current_user.is_authenticated %}
+        <p>Or <a href="{{ url_for('auth.register') }}">register</a> / <a href="{{ url_for('auth.login') }}">log in</a> to save your work.</p>
+      {% endif %}
+      {% endblock %}
+    </div>
+  </main>
+  <script>
+    document.getElementById('themeToggle').addEventListener('click', function() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme') || 'light';
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+    });
+    // Load saved theme
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+  </script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# filepath: /Users/devinfrank/setlist-genie/templates/auth/reset.html
+<h2>Reset Password</h2>
+<form method="post" action="{{ url_for('auth.reset_password') }}">
+  <p><label>Username or Email</label><br/><input name="identity" required /></p>
+  <p><label>New Password</label><br/><input name="password" type="password" required /></p>
+  <p><label>Confirm New Password</label><br/><input name="password2" type="password" required /></p>
+  <p><button class="btn" type="submit">Reset Password</button></p>
+</form>
+<p><a href="{{ url_for('auth.login') }}">Back to login</a></p>

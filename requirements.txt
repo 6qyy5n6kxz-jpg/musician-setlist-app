@@ -1,0 +1,9 @@
+flask
+flask-login
+flask-sqlalchemy
+werkzeug
+reportlab
+qrcode[pil]
+requests
+python-dotenv
+pypdf

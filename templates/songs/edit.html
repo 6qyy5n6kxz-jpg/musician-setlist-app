@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Edit Song</h2>
+<form method="post" action="{{ url_for('update_song', song_id=song.id) }}">
+  <div class="grid">
+    <p><label>Title</label><br/><input name="title" value="{{ song.title }}" required /></p>
+    <p><label>Artist</label><br/><input name="artist" value="{{ song.artist }}" required /></p>
+  </div>
+  <div class="grid">
+    <p><label>Tempo (BPM)</label><br/><input name="tempo_bpm" type="number" value="{{ song.tempo_bpm or '' }}" /></p>
+    <p><label>Musical Key</label><br/><input name="musical_key" value="{{ song.musical_key or '' }}" /></p>
+  </div>
+  <div class="grid">
+    <p><label>Genre</label><br/><input name="genre" value="{{ song.genre or '' }}" /></p>
+    <p><label>Release Year</label><br/><input name="release_year" type="number" value="{{ song.release_year or '' }}" /></p>
+  </div>
+  <p><label>Tags</label><br/><input name="tags" value="{{ song.tags or '' }}" placeholder="comma separated" /></p>
+  <p><label>Duration Override (mm:ss)</label><br/><input name="duration_override" value="{{ fmt_mmss(song.duration_override_sec) if song.duration_override_sec else '' }}" placeholder="3:10" /></p>
+  <p><label>Chord Chart</label><br/><textarea name="chord_chart" rows="10">{{ song.chord_chart or '' }}</textarea></p>
+  <p><button class="btn" type="submit">Update Song</button></p>
+</form>
+
+<form class="inline-form" method="post" action="{{ url_for('song_generate_ai_chart', song_id=song.id) }}">
+  <div class="helper-row">
+    <span class="muted">Need a fresh chart? We’ll draft one with AI and replace the field above (requires a valid OPENAI_API_KEY).</span>
+    <button class="btn ghost" type="submit">✨ Draft with AI</button>
+  </div>
+</form>
+
+{% if song.files %}
+  <h3>Attachments</h3>
+  {% for f in song.files %}
+    <div class="row">
+      <div>
+        <strong>{{ f.original_name }}</strong> ({{ f.size_bytes }} bytes)
+        {% if f.kind == 'pdf' %}<span title="PDF">📄</span>{% endif %}
+      </div>
+      <div class="right">
+        <a class="btn" href="{{ url_for('view_attachment', att_id=f.id) }}" target="_blank">View</a>
+        <a class="btn" href="{{ url_for('download_attachment', att_id=f.id) }}">Download</a>
+        {% if f.id == song.default_file_id %}
+          <span class="muted">Default</span>
+        {% else %}
+          <form class="inline" method="post" action="{{ url_for('song_set_default_file', song_id=song.id, file_id=f.id) }}">
+            <button class="btn" type="submit">Set Default</button>
+          </form>
+        {% endif %}
+        <form class="inline" method="post" action="{{ url_for('delete_attachment', att_id=f.id) }}" onsubmit="return confirm('Delete this file?');">
+          <button class="btn btn-danger" type="submit">Delete</button>
+        </form>
+      </div>
+    </div>
+  {% endfor %}
+{% endif %}
+
+<form method="post" action="{{ url_for('upload_song_file', song_id=song.id) }}" enctype="multipart/form-data">
+  <p><label>Upload PDF</label><br/><input type="file" name="file" accept=".pdf" /></p>
+  <p><button class="btn" type="submit">Upload</button></p>
+</form>
+
+<p><a class="btn" href="{{ url_for('list_songs') }}">← Back to Songs</a></p>
+{% endblock %}

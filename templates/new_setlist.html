@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>New Setlist</h2>
+<form method="post" action="{{ url_for('create_setlist') }}" id="newSetForm">
+  <div class="grid">
+    <p><label>Name</label><br/><input name="name" required /></p>
+    <p><label>Target Minutes</label><br/><input name="target_minutes" type="number" min="1" /></p>
+  </div>
+  <div class="grid">
+    <p><label>Event Type</label><br/><input name="event_type" placeholder="Wedding, Bar, Festival..." /></p>
+    <p><label>Venue Type</label><br/><input name="venue_type" placeholder="Indoor, Outdoor..." /></p>
+  </div>
+  <p><label>Notes</label><br/><textarea name="notes" rows="3" placeholder="Any notes..."></textarea></p>
+
+  <!-- Build tools (moved here) -->
+  <details class="section" id="new-buildtools" open>
+    <summary>⚙️ Build tools <span class="muted" style="font-weight:400;">(presets & optional auto-build)</span></summary>
+
+    <style>
+      #new-buildtools .tabs { display:flex; gap:6px; border-bottom:1px solid var(--border,#ddd); margin:6px 0 10px; }
+      #new-buildtools .tab { padding:6px 10px; border:1px solid var(--border,#ddd); border-bottom:none; border-radius:8px 8px 0 0; cursor:pointer; background:var(--btn-bg,#fff); }
+      #new-buildtools .tab[aria-selected="true"] { font-weight:600; }
+      #new-buildtools .tabpanel { display:none; }
+      #new-buildtools .tabpanel.active { display:block; }
+      [data-theme="dark"] #new-buildtools .tab { background:#2a2b2e; border-color:#4c4f54; }
+      #new-buildtools .scope-fieldset {
+        margin:14px 0 10px;
+        padding:10px 12px;
+        border:1px solid var(--border,#ddd);
+        border-radius:10px;
+        display:flex;
+        gap:16px;
+        flex-wrap:wrap;
+        align-items:center;
+      }
+      #new-buildtools .scope-fieldset legend {
+        font-weight:600;
+        margin-right:8px;
+        padding:0 4px;
+      }
+      #new-buildtools .scope-fieldset label {
+        display:inline-flex;
+        align-items:center;
+        gap:6px;
+        font-weight:500;
+      }
+      [data-theme="dark"] #new-buildtools .scope-fieldset {
+        border-color:#3c3d40;
+        background:#1f2227;
+      }
+    </style>
+
+    <div class="tabs" role="tablist" aria-label="Build tools">
+      <button type="button" class="tab" id="tab-presets-new"  role="tab" aria-controls="panel-presets-new"  aria-selected="true">Event presets</button>
+      <button type="button" class="tab" id="tab-autobuild-new" role="tab" aria-controls="panel-autobuild-new" aria-selected="false">Auto-build</button>
+    </div>
+
+    <!-- PANEL: Presets (these set the form fields above) -->
+    <div id="panel-presets-new" class="tabpanel active" role="tabpanel" aria-labelledby="tab-presets-new">
+      <div style="margin-top:2px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn" type="button" data-preset='{"target":120,"event":"Wedding","venue":"Banquet Hall"}' title="120 min · Wedding · Banquet Hall">💍 Wedding</button>
+        <button class="btn" type="button" data-preset='{"target":90,"event":"Bar/Night","venue":"Bar"}' title="90 min · Bar/Night · Bar">🍻 Bar/Night</button>
+        <button class="btn" type="button" data-preset='{"target":45,"event":"Festival","venue":"Outdoor Stage"}' title="45 min · Festival · Outdoor Stage">🎪 Festival</button>
+        <button class="btn" type="button" data-preset='{"target":60,"event":"Coffeehouse","venue":"Cafe"}' title="60 min · Coffeehouse · Cafe">☕ Coffeehouse</button>
+      </div>
+      <p class="muted" style="margin-top:8px;">Presets fill the fields above; you can tweak them before creating.</p>
+    </div>
+
+    <!-- PANEL: Auto-build options -->
+    <div id="panel-autobuild-new" class="tabpanel" role="tabpanel" aria-labelledby="tab-autobuild-new">
+      <div class="grid" style="margin-top:2px;">
+        <p>
+          <label>Vibe</label><br/>
+          <select name="ab_vibe">
+            <option value="mixed">Mixed</option>
+            <option value="chill">Chill</option>
+            <option value="energetic">Energetic</option>
+          </select>
+       </p>
+      </div>
+      <div class="grid">
+        <p>
+          <label>Require tags (comma-separated)</label><br/>
+          <input name="ab_tags" placeholder="wedding, upbeat" />
+        </p>
+        <p>
+          <label>Require genres (comma-separated)</label><br/>
+          <input name="ab_genres" placeholder="pop, rock" />
+        </p>
+      </div>
+      <fieldset class="scope-fieldset">
+        <legend>Song source</legend>
+        <label>
+          <input type="radio" name="ab_scope" value="mine" checked />
+          My songs
+        </label>
+        <label>
+          <input type="radio" name="ab_scope" value="shared" />
+          Shared catalog
+        </label>
+        <label>
+          <input type="radio" name="ab_scope" value="all" />
+          My + shared
+        </label>
+        <label title="Adds a curated batch of AI suggestions before filling the rest.">
+          <input type="radio" name="ab_scope" value="ai" />
+          AI recommendations
+        </label>
+      </fieldset>
+      <p>
+        <label>Avoid repeating the same artist</label><br/>
+        <label style="display:inline-flex; gap:8px; align-items:center;">
+          <input type="checkbox" name="ab_avoid_same_artist" value="1" />
+          No repeat artists
+        </label>
+      </p>
+      <label style="display:inline-flex; gap:8px; align-items:center;">
+        <input type="checkbox" name="ab_do" value="1" checked />
+        <strong>Create & auto-build now</strong>
+      </label>
+      <p class="muted" style="margin-top:4px;">If checked, we’ll build the setlist right after creating it.</p>
+            <div id="ab_preset_block" style="margin-top:10px;">
+        <label><strong>Optional section preset after auto-build</strong></label><br/>
+        <select name="ab_preset" style="max-width:300px;">
+          <option value="">— None —</option>
+          <option value="basic">Set 1 / Break / Set 2 / Encore</option>
+          <option value="three">Three-set layout (1 / Break / 2 / Break / 3 / Encore)</option>
+          <option value="chunk">Chunked (by 8 songs per set)</option>
+        </select>
+        <p class="muted" style="margin-top:4px;">We’ll label sections using this pattern immediately after the build.</p>
+      </div>
+    </div>
+
+    <script>
+      (function(){
+        // Tabs
+        const tabs = [
+          {btn: document.getElementById('tab-presets-new'),  panel: document.getElementById('panel-presets-new'),  id:'presets'},
+          {btn: document.getElementById('tab-autobuild-new'),panel: document.getElementById('panel-autobuild-new'),id:'autobuild'}
+        ];
+        function select(which){
+          tabs.forEach(t => {
+            const on = (t.id === which);
+            t.btn.setAttribute('aria-selected', String(on));
+            t.panel.classList.toggle('active', on);
+          });
+        }
+        tabs.forEach(t => t.btn && t.btn.addEventListener('click', () => select(t.id)));
+        // Preset buttons write to the main form fields
+        const form = document.getElementById('newSetForm');
+        function setVal(name, val){ const el=form.querySelector('[name="'+name+'"]'); if (el) el.value = val; }
+        document.querySelectorAll('#panel-presets-new .btn[data-preset]').forEach(btn=>{
+          btn.addEventListener('click', ()=>{
+            try{
+              const p = JSON.parse(btn.getAttribute('data-preset')||'{}');
+              if (p.target) setVal('target_minutes', p.target);
+              if (p.event)  setVal('event_type', p.event);
+              if (p.venue)  setVal('venue_type', p.venue);
+              if (typeof showToast === 'function') showToast('Preset applied');
+            }catch(_){}
+          });
+        });
+      })();
+    </script>
+  </details>
+
+  <p style="margin-top:10px;">
+    <button class="btn" type="submit">Create Setlist</button>
+  </p>
+</form>
+{% endblock %}

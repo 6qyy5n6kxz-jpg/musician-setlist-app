@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="page-title">Setlist Genie</h1>
+<section class="form-card">
+  <h2 class="section-title">Add a Song</h2>
+  <form method="post" action="{{ url_for('new_song') }}" class="stack-form">
+    <label for="title">Title</label>
+    <input id="title" name="title" required>
+
+    <label for="artist">Artist</label>
+    <input id="artist" name="artist" required>
+
+    <details class="details-panel">
+      <summary>Optional details (we’ll auto-fill later with AI)</summary>
+      <div class="details-body">
+        <label for="tempo_bpm">Tempo (BPM)</label>
+        <input id="tempo_bpm" name="tempo_bpm" type="number" min="0" placeholder="e.g., 120">
+
+        <label for="musical_key">Key (e.g., C major, G minor)</label>
+        <input id="musical_key" name="musical_key" placeholder="e.g., A minor">
+
+        <label for="genre">Genre</label>
+        <input id="genre" name="genre" placeholder="e.g., Classic Rock">
+
+        <label for="tags">Tags (comma-separated)</label>
+        <input id="tags" name="tags" placeholder="wedding, upbeat, 90s">
+
+        <label for="release_year">Release year</label>
+        <input id="release_year" name="release_year" type="number" min="0" placeholder="e.g., 1997">
+
+        <label for="duration_override">Manual duration (mm:ss)</label>
+        <input id="duration_override" name="duration_override" placeholder="e.g., 3:30">
+
+        <label for="chord_chart">Chord chart (ChordPro or plain text)</label>
+        <textarea id="chord_chart" name="chord_chart" rows="6" placeholder="[C]Amazing [G]Grace&#10;[F]How sweet..."></textarea>
+
+        <div class="helper-row">
+          <span class="muted">⚡ Auto-format chords · Paste plain text, we’ll wrap chords &amp; section titles for you.</span>
+          <label class="muted">
+            <input type="checkbox" name="generate_ai_chart" value="1">
+            Also draft a chord chart with AI (accuracy not guaranteed).
+          </label>
+        </div>
+      </div>
+    </details>
+
+    <button class="btn primary" type="submit">Save Song</button>
+  </form>
+</section>
+{% endblock %}

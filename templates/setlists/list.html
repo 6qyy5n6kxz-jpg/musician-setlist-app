@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Setlists</h2>
+<p><a class="btn" href="{{ url_for('new_setlist') }}">Create New Setlist</a></p>
+{% if setlists %}
+  {% for sl in setlists %}
+    <div class="row">
+      <div>
+        <div><strong><a href="{{ url_for('edit_setlist', setlist_id=sl.id) }}">{{ sl.name }}</a></strong></div>
+        <div class="muted">
+          {% if sl.event_type %}Event: {{ sl.event_type }} · {% endif %}
+          {% if sl.venue_type %}Venue: {{ sl.venue_type }} · {% endif %}
+          {% if sl.target_minutes %}Target: {{ sl.target_minutes }} min · {% endif %}
+          {{ (sl.songs|length) }} songs
+        </div>
+      </div>
+        <div class="right">
+        <a class="btn" href="{{ live_mode_url(sl.id) }}" target="_blank" title="Open Live Mode">🎛️ Live Mode</a>
+        <a class="btn" href="{{ url_for('edit_setlist', setlist_id=sl.id) }}">Open</a>
+        <a class="btn" href="{{ url_for('view_setlist', setlist_id=sl.id) }}" target="_blank">🔗 Share</a>
+        <a class="btn" href="{{ url_for('print_setlist', setlist_id=sl.id) }}" target="_blank">🖨️ Print</a>
+        <form class="inline" method="post" action="{{ url_for('duplicate_setlist', setlist_id=sl.id) }}">
+          <button class="btn" type="submit">📄 Duplicate</button>
+        </form>
+        <form class="inline" method="post" action="{{ url_for('delete_setlist', setlist_id=sl.id) }}" onsubmit="return confirm('Delete this setlist?');">
+          <button class="btn btn-danger" type="submit">Delete</button>
+        </form>
+      </div>
+    </div>
+  {% endfor %}
+{% else %}
+  <p>No setlists yet. <a href="{{ url_for('new_setlist') }}">Create one</a>.</p>
+{% endif %}
+{% endblock %}

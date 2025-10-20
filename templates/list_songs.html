@@ -1,0 +1,72 @@
+<h2>Songs</h2>
+
+<div style="display:flex; gap:8px; flex-wrap:wrap; margin:12px 0;">
+  <a class="btn{% if scope == 'all' %} active{% endif %}" href="{{ url_for('list_songs', scope='all') }}">All songs</a>
+  <a class="btn{% if scope == 'mine' %} active{% endif %}" href="{{ url_for('list_songs', scope='mine') }}">My songs</a>
+  <a class="btn{% if scope == 'catalog' %} active{% endif %}" href="{{ url_for('list_songs', scope='catalog') }}">Shared catalog</a>
+</div>
+
+<form method="get" action="{{ url_for('list_songs') }}" style="margin: 12px 0;">
+  <input type="hidden" name="scope" value="{{ scope }}" />
+  <input name="q" placeholder="Search title, artist, genre, key, tags…" value="{{ q or '' }}" />
+     <p style="margin-top:8px;">
+    <button class="btn" type="submit">Search</button>
+    <a class="btn" href="{{ url_for('list_songs') }}">Clear</a>
+    <a class="btn" href="{{ url_for('export_songs_csv', q=q) }}">⬇️ Export CSV</a>
+    <form class="inline" method="post" action="{{ url_for('autofill_all_songs', q=q) }}" style="display:inline;">
+      <button class="btn" type="submit" title="Fill missing metadata for all filtered songs"
+              onclick="return confirm('Auto-fill missing info for ALL currently filtered songs? This may take a moment.');">
+        ✨ Autofill (all filtered)
+      </button>
+    </form>
+  </p>
+  <p style="margin:8px 0 16px;">
+    <a class="btn" href="{{ url_for('songs_import_form') }}">Import CSV</a>
+    <a class="btn" href="{{ url_for('songs_template_csv') }}">Download Template</a>
+    </p>
+</form>
+<form method="post" action="{{ url_for('create_song') }}" style="margin: 8px 0 16px;">
+  <div class="grid">
+    <p><input name="title" placeholder="Quick add — Title" required /></p>
+    <p><input name="artist" placeholder="Artist" required /></p>
+  </div>
+  <p>
+    <button class="btn" type="submit">＋ Quick Add</button>
+    <span class="muted">Adds with just title & artist (you can edit details later).</span>
+  </p>
+  <p class="muted" style="margin-top:6px;">
+    <label style="display:flex; gap:8px; align-items:center;">
+      <input type="checkbox" name="generate_ai_chart" value="1" />
+      <span>Generate draft chord chart with AI (accuracy not guaranteed).</span>
+    </label>
+  </p>
+</form>
+{% if songs %}
+  {% for s in songs %}
+    <div class="row">
+      <div>
+        <div><strong>{{ s.title }}</strong> — {{ s.artist }}</div>
+        <div class="muted">
+            {% if s.tempo_bpm %}Tempo: {{ s.tempo_bpm }} BPM · {% endif %}
+            {% if s.musical_key %}Key: {{ s.musical_key }} · {% endif %}
+            {% if s.genre %}Genre: {{ s.genre }} · {% endif %}
+            {% if s.release_year %}Year: {{ s.release_year }} · {% endif %}
+            {% if s.tags %}Tags: {{ s.tags }} · {% endif %}
+            {% set dur = fmt_mmss(s.duration_override_sec) if s.duration_override_sec else fmt_mmss(estimate(s.tempo_bpm)) %}
+            Duration: {{ dur }}{% if song_has_pdf(s) %} · 📄 PDF{% endif %}{% if s.chord_chart %} · 🎼 Chart{% endif %}
+        </div>
+      </div>
+            <div class="right">
+        <form class="inline" method="post" action="{{ url_for('ai_enrich_song', song_id=s.id) }}">
+          <button class="btn" type="submit" title="Fetch tempo/key/genre/tags/year (Spotify → OpenAI)">✨ AI Autofill</button>
+        </form>
+        <a class="btn" href="{{ url_for('edit_song', song_id=s.id) }}">Edit</a>
+        <form class="inline" method="post" action="{{ url_for('delete_song', song_id=s.id) }}" onsubmit="return confirm('Delete this song?');">
+          <button class="btn btn-danger" type="submit">Delete</button>
+        </form>
+      </div>
+    </div>
+  {% endfor %}
+{% else %}
+  <p>No songs found. <a href="{{ url_for('new_song') }}">Add one</a>.</p>
+{% endif %}

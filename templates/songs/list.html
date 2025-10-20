@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="page-title">Setlist Genie</h1>
+<section class="page-section">
+  <h2 class="section-title">Songs</h2>
+
+  <div class="tab-group">
+    <a class="tab {{ 'active' if scope == 'all' else '' }}" href="{{ url_for('list_songs', scope='all', q=q) }}">All songs</a>
+    <a class="tab {{ 'active' if scope == 'mine' else '' }}" href="{{ url_for('list_songs', scope='mine', q=q) }}">My songs</a>
+    <a class="tab {{ 'active' if scope == 'catalog' else '' }}" href="{{ url_for('list_songs', scope='catalog', q=q) }}">Shared catalog</a>
+  </div>
+
+  <div class="search-shell">
+    <form method="get" action="{{ url_for('list_songs') }}">
+      <input type="hidden" name="scope" value="{{ scope }}">
+      <input class="search-input" type="text" name="q" value="{{ q }}" placeholder="Search title, artist, genre, key, tags…">
+      <div class="search-actions">
+        <button class="btn primary" type="submit">Search</button>
+        <a class="btn ghost" href="{{ url_for('list_songs', scope=scope) }}">Clear</a>
+        <a class="btn ghost" href="{{ url_for('export_songs_csv') }}">⬇️ Export CSV</a>
+      </div>
+    </form>
+    <div class="search-actions">
+      <form class="inline-form" method="post" action="{{ url_for('autofill_all_songs', q=q, scope=scope) }}">
+        <button class="btn ghost" type="submit">✨ Autofill (all filtered)</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="songs-toolbar">
+    <a class="btn ghost" href="{{ url_for('songs_import_form') }}">Import CSV</a>
+    <a class="btn ghost" href="{{ url_for('songs_template_csv') }}">Download Template</a>
+    <a class="btn primary" href="{{ url_for('new_song') }}">➕ Add Song</a>
+  </div>
+
+  {% if songs %}
+    <div class="song-list">
+      {% for s in songs %}
+        <div class="song-card">
+          <div class="song-card-body">
+            <h3 class="song-card-title">{{ s.title }} — {{ s.artist }}</h3>
+            {% set meta = [] %}
+            {% if s.tempo_bpm %}{% set meta = meta + ['Tempo: ' ~ s.tempo_bpm ~ ' BPM'] %}{% endif %}
+            {% if s.musical_key %}{% set meta = meta + ['Key: ' ~ s.musical_key] %}{% endif %}
+            {% if s.genre %}{% set meta = meta + ['Genre: ' ~ s.genre] %}{% endif %}
+            {% if s.release_year %}{% set meta = meta + ['Year: ' ~ s.release_year] %}{% endif %}
+            {% if s.tags %}{% set meta = meta + ['Tags: ' ~ s.tags] %}{% endif %}
+            {% set duration = estimate(s.tempo_bpm) %}
+            {% if s.duration_override_sec %}{% set duration = s.duration_override_sec %}{% endif %}
+            {% set meta = meta + ['Duration: ' ~ fmt_mmss(duration)] %}
+            <div class="song-card-meta">
+              {{ meta|join(' · ') }}
+              {% if s.files|length %}<span title="Has PDF">· 📄 Chart</span>{% endif %}
+            </div>
+          </div>
+          {% set is_owner = (s.user_id == current_user.id) %}
+          <div class="song-card-actions">
+            {% if is_owner %}
+              <form class="inline-form" method="post" action="{{ url_for('song_generate_ai_chart', song_id=s.id) }}">
+                <button class="btn ghost" type="submit">✨ AI Autofill</button>
+              </form>
+              <a class="btn primary" href="{{ url_for('edit_song', song_id=s.id) }}">Edit</a>
+              <form class="inline-form" method="post" action="{{ url_for('delete_song', song_id=s.id) }}" onsubmit="return confirm('Delete this song?');">
+                <input type="hidden" name="scope" value="{{ scope }}">
+                {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+                <button class="btn btn-danger" type="submit">Delete</button>
+              </form>
+            {% else %}
+              <form class="inline-form" method="post" action="{{ url_for('songs_clone_to_user', song_id=s.id) }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <button class="btn" type="submit">Save to My Songs</button>
+              </form>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <p>No songs yet. <a href="{{ url_for('new_song') }}">Add one</a>.</p>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

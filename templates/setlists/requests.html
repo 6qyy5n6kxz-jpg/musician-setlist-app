@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Audience Requests — {{ sl.name }}</h2>
+<div class="section" style="display:flex; gap:20px; flex-wrap:wrap; align-items:center;">
+  <div>
+    <img src="{{ qr_url }}" alt="Requests QR" width="200" height="200" style="border:1px solid #ddd; border-radius:12px; padding:8px; background:#fff;"/>
+  </div>
+  <div style="flex:1; min-width:220px;">
+    <p class="muted" style="margin-bottom:8px;">Share this QR so the crowd can scan and request songs.</p>
+    <p><a class="btn" href="{{ share_url }}" target="_blank">Open public page</a></p>
+    <p><a class="btn" href="{{ qr_url }}" download="setlist-{{ sl.id }}-requests.png">Download QR PNG</a></p>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px;">
+  <h3>New requests</h3>
+  {% if new_requests %}
+    {% for req in new_requests %}
+      <div class="section" style="margin-top:10px;">
+        <strong>{{ req.label() }}</strong>
+        <div class="muted">
+          Requested {{ req.created_at.strftime('%Y-%m-%d %H:%M') }}
+          {% if req.from_name %} · by {{ req.from_name }}{% endif %}
+          {% if req.from_contact %} · contact: {{ req.from_contact }}{% endif %}
+        </div>
+        {% if req.free_text_title and req.song %}<div class="muted"><em>Note:</em> {{ req.free_text_title }}</div>{% elif req.free_text_title %}<div class="muted"><em>Requested:</em> {{ req.free_text_title }}</div>{% endif %}
+        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+          <form method="post" action="{{ url_for('update_request_status', request_id=req.id) }}">
+            <input type="hidden" name="status" value="queued" />
+            <button class="btn" type="submit">Queue</button>
+          </form>
+          <form method="post" action="{{ url_for('update_request_status', request_id=req.id) }}">
+            <input type="hidden" name="status" value="declined" />
+            <button class="btn btn-danger" type="submit">Decline</button>
+          </form>
+          {% if req.song_id and req.setlist_id %}
+          <form method="post" action="{{ url_for('add_request_to_setlist', request_id=req.id) }}">
+            <button class="btn" type="submit" title="Add this song to the setlist">Add to setlist</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No new requests right now.</p>
+  {% endif %}
+</div>
+
+<div class="section" style="margin-top:20px;">
+  <h3>Queued / handled</h3>
+  {% if other_requests %}
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:6px; border-bottom:1px solid #ddd;">Request</th>
+          <th style="text-align:left; padding:6px; border-bottom:1px solid #ddd;">Status</th>
+          <th style="text-align:left; padding:6px; border-bottom:1px solid #ddd;">Updated</th>
+          <th style="text-align:left; padding:6px; border-bottom:1px solid #ddd;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for req in other_requests %}
+        <tr>
+          <td style="padding:6px;">
+            <strong>{{ req.label() }}</strong>
+            {% if req.free_text_title and req.song %}<div class="muted"><em>Note:</em> {{ req.free_text_title }}</div>{% elif req.free_text_title %}<div class="muted"><em>Requested:</em> {{ req.free_text_title }}</div>{% endif %}
+            <div class="muted">
+              {{ req.created_at.strftime('%Y-%m-%d %H:%M') }}{% if req.from_name %} · {{ req.from_name }}{% endif %}{% if req.from_contact %} · {{ req.from_contact }}{% endif %}
+            </div>
+          </td>
+          <td style="padding:6px;">{{ req.status.title() }}</td>
+          <td style="padding:6px;">{{ req.updated_at.strftime('%Y-%m-%d %H:%M') if req.updated_at else req.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td style="padding:6px; display:flex; gap:6px; flex-wrap:wrap;">
+            {% for status in statuses %}
+              {% if status != req.status %}
+              <form method="post" action="{{ url_for('update_request_status', request_id=req.id) }}">
+                <input type="hidden" name="status" value="{{ status }}" />
+                <button class="btn" type="submit">Mark {{ status }}</button>
+              </form>
+              {% endif %}
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No queued or completed requests yet.</p>
+  {% endif %}
+</div>
+
+<p style="margin-top:20px;"><a class="btn" href="{{ url_for('edit_setlist', setlist_id=sl.id) }}">← Back to setlist</a></p>
+{% endblock %}

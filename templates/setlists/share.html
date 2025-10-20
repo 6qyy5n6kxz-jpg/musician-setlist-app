@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>{{ sl.name }}</h2>
+{% set details = [] %}
+{% if sl.event_type %}{% set _ = details.append('Event: ' ~ sl.event_type) %}{% endif %}
+{% if sl.venue_type %}{% set _ = details.append('Venue: ' ~ sl.venue_type) %}{% endif %}
+{% if sl.target_minutes %}{% set _ = details.append('Target: ' ~ sl.target_minutes ~ ' min') %}{% endif %}
+{% if details %}<p class="muted">{{ details|join(' · ') }}</p>{% endif %}
+<p class="muted">You're viewing the setlist shared by the band — feel free to request a song!</p>
+
+<div class="section">
+  <h3>Request a song</h3>
+  <form method="post" action="{{ url_for('submit_request_token', token=sl.share_token) }}" style="display:grid; gap:10px; max-width:520px;">
+    <label>
+      Choose from tonight's set
+      <select name="song_id">
+        <option value="">— Select a song —</option>
+        {% for row in songs %}
+          <option value="{{ row.song.id }}">#{{ row.position }} — {{ row.song.title }} — {{ row.song.artist }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Or request something else
+      <input name="free_text" placeholder="Song · Artist" />
+    </label>
+    <div class="grid" style="gap:10px;">
+      <label>Your name (optional)<br/>
+        <input name="from_name" />
+      </label>
+      <label>Contact (optional)<br/>
+        <input name="from_contact" placeholder="Phone or email" />
+      </label>
+    </div>
+    <p class="muted" style="margin-top:-6px;">We'll do our best — thanks for the request!</p>
+    <button class="btn" type="submit">Send Request</button>
+  </form>
+</div>
+
+<div class="section" style="margin-top:20px;">
+  <h3>Tonight's songs</h3>
+  {% for row in songs %}
+    <div class="row">
+      <div>
+        <strong>#{{ row.position }} — {{ row.song.title }}</strong> — {{ row.song.artist }}
+        <div class="muted">
+          {% if row.song.musical_key %}Key: {{ row.song.musical_key }} · {% endif %}
+          {% if row.song.tempo_bpm %}BPM: {{ row.song.tempo_bpm }} · {% endif %}
+          {% if row.song.release_year %}Year: {{ row.song.release_year }} · {% endif %}
+          {{ fmt_mmss(row.song.duration_override_sec or estimate(row.song.tempo_bpm)) }}
+        </div>
+        {% if row.notes %}<div class="muted"><em>Notes:</em> {{ row.notes }}</div>{% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

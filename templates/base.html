@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Setlist Genie</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</head>
+<body>
+  <nav>
+    <div class="nav-left">
+      <button type="button" onclick="location.href='{{ url_for('home') }}'">Home</button>
+      <button type="button" onclick="location.href='{{ url_for('list_songs') }}'">Songs</button>
+      <button type="button" onclick="location.href='{{ url_for('new_song') }}'">Add Song</button>
+      <button type="button" onclick="location.href='{{ url_for('list_setlists') }}'">Setlists</button>
+      <button type="button" onclick="location.href='{{ url_for('new_setlist') }}'">New Setlist</button>
+    </div>
+    <div class="nav-right">
+      {% if current_user.is_authenticated %}
+        <span class="greeting">Hi, {{ current_user.username }}</span>
+        <button type="button" onclick="location.href='{{ url_for('auth.logout') }}'">Logout</button>
+      {% else %}
+        <span class="greeting">Hi, there</span>
+        <button type="button" onclick="location.href='{{ url_for('auth.login') }}'">Login</button>
+        <button type="button" onclick="location.href='{{ url_for('auth.register') }}'">Register</button>
+      {% endif %}
+      <button type="button" id="themeToggle" title="Toggle dark/light theme">🌗 Theme</button>
+    </div>
+  </nav>
+  <main>
+    {% with flashes = get_flashed_messages(with_categories=true) %}
+      {% if flashes %}
+        <div class="flashes">
+          {% for category, message in flashes %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    <div class="content">
+      {% block content %}{{ content|safe }}{% endblock %}
+    </div>
+  </main>
+  <script>
+    document.getElementById('themeToggle').addEventListener('click', function() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme') || 'light';
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+    });
+    // Load saved theme
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+  </script>
+</body>
+</html>

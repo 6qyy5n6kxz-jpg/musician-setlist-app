@@ -1,0 +1,1832 @@
+<!doctype html>
+<html id="liveRoot" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <title>Live Mode — {{ sl.name }}</title>
+  <meta name="color-scheme" content="dark light">
+  <style>
+    :root { color-scheme: dark light; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; padding:0; height:100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+    body { display:flex; flex-direction:column; }
+
+    header {
+      padding: 10px 14px;
+      display:flex;
+      align-items:center;
+      gap:12px;
+      border-bottom: 1px solid #ddd;
+    }
+    header h1 { font-size: 16px; margin:0; font-weight:600; }
+    header .spacer { flex:1; }
+    header a { text-decoration:none; }
+    header .btn {
+      display:inline-block; padding:6px 10px; border:1px solid #ccc; border-radius:8px;
+    }
+
+    .wrap { flex:1; display:flex; min-height:0; }
+    .wrap.sidebar-collapsed .sidebar {
+      width:0;
+      min-width:0;
+      flex:0 0 0;
+      transform:translateX(-100%);
+      opacity:0;
+      pointer-events:none;
+      border-right:none;
+    }
+    .wrap.sidebar-collapsed .stage {
+      flex:1;
+    }
+    .sidebar {
+      width: 320px; border-right:1px solid #ddd; overflow:auto;
+      flex:0 0 320px;
+      transition:transform .2s ease, opacity .2s ease, width .2s ease;
+    }
+    .item {
+      padding:10px 12px; border-bottom:1px solid #eee; cursor:pointer;
+      display:flex; align-items:center; gap:8px;
+    }
+    .item.active { background: rgba(0,0,0,0.07); font-weight:600; }
+    .item .pos { display:inline-block; min-width:2.2em; opacity:0.7; }
+    .item .title { flex:1; }
+    .item .tag { font-size:12px; opacity:0.7; }
+
+    .stage { flex:1; display:flex; flex-direction:column; min-width:0; }
+    .viewer {
+      flex:1;
+      min-height:0;
+      display:flex;
+      gap:18px;
+      background:#f1f5f9;
+      padding:clamp(18px, 3vw, 42px);
+    }
+    [data-theme="dark"] .viewer {
+      background:#0b101a;
+    }
+    .chart-wrapper {
+      --chart-font-scale: 1;
+      flex:1;
+      display:none;
+      flex-direction:column;
+      gap:20px;
+      background:#ffffff;
+      border-radius:20px;
+      padding:clamp(28px, 3.4vw, 48px);
+      color:#0f172a;
+      box-shadow:0 26px 48px rgba(15,23,42,0.16);
+      overflow:auto;
+      font-family:"Avenir Next","Helvetica Neue","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      line-height:1.8;
+      font-size:calc(1.06rem * var(--chart-font-scale));
+    }
+    [data-theme="dark"] .chart-wrapper {
+      background:#0f172a;
+      color:#e2e8f0;
+      box-shadow:0 26px 56px rgba(0,0,0,0.55);
+    }
+    .chart-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      flex-wrap:wrap;
+      gap:16px;
+      font-size:calc(0.92rem * var(--chart-font-scale));
+      color:rgba(71,85,105,0.9);
+    }
+    [data-theme="dark"] .chart-header {
+      color:rgba(203,213,225,0.75);
+    }
+    .chart-title {
+      font-weight:700;
+      font-size:calc(1.55rem * var(--chart-font-scale));
+      color:#0b1120;
+      letter-spacing:0.01em;
+    }
+    [data-theme="dark"] .chart-title {
+      color:#f8fafc;
+    }
+    .chart-meta {
+      font-size:calc(0.95rem * var(--chart-font-scale));
+      font-weight:600;
+      letter-spacing:0.02em;
+      text-transform:none;
+      color:rgba(71,85,105,0.9);
+    }
+    [data-theme="dark"] .chart-meta {
+      color:rgba(226,232,240,0.75);
+    }
+    .chart-lines {
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .chart-line {
+      display:block;
+      margin:0;
+      font-family:inherit;
+      white-space:pre-wrap;
+      font-size:calc(1.06rem * var(--chart-font-scale));
+      line-height:1.7;
+      color:inherit;
+    }
+    .chart-line.has-chords {
+      display:block;
+      padding-top:1.2em;
+      line-height:1.05;
+      margin-bottom:0.14em;
+    }
+    .chart-line + .chart-line.has-chords {
+      margin-top:-0.08em;
+    }
+    .lyric-run {
+      white-space:pre;
+      line-height:1.12;
+      color:inherit;
+    }
+    .chord-char {
+      position:relative;
+      display:inline;
+      line-height:1.05;
+      white-space:pre;
+      color:inherit;
+      vertical-align:bottom;
+    }
+    .chord-char.no-chord {
+      padding-top:0;
+    }
+    .chord-char::before {
+      content:attr(data-chord);
+      position:absolute;
+      left:50%;
+      bottom:100%;
+      transform:translate(-50%, -0.18em);
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding:0.08em 0.26em;
+      border-radius:7px;
+      background:#ffe163;
+      color:#111827;
+      font-weight:600;
+      letter-spacing:0.014em;
+      box-shadow:0 2px 6px rgba(15,23,42,0.18);
+      pointer-events:none;
+      min-height:1.05em;
+    }
+    .chord-char.no-chord::before {
+      display:none;
+    }
+    .chord-char.highlighted::before {
+      background:#ffd447;
+      color:#111827;
+      box-shadow:0 3px 8px rgba(15,23,42,0.22);
+    }
+    .chord-char[data-chord]:not(.no-chord):hover::before {
+      background:#ffeb7a;
+    }
+    [data-theme="dark"] .chord-char::before {
+      background:#facc15;
+      color:#0f172a;
+      box-shadow:0 2px 8px rgba(0,0,0,0.45);
+    }
+    [data-theme="dark"] .chord-char.highlighted::before {
+      background:#fbbf24;
+      color:#0f172a;
+    }
+
+    .controls {
+      background:#f4f5f9;
+      color:#1b2433;
+      border-top:1px solid #d4d9e5;
+      border-radius:18px 18px 0 0;
+      padding:14px clamp(14px, 3vw, 28px);
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:center;
+      box-shadow:0 -6px 24px rgba(15,23,42,0.12);
+    }
+    [data-theme="dark"] .controls {
+      background:rgba(19,24,34,0.95);
+      color:#e2e8f0;
+      border-top-color:rgba(91,102,123,0.55);
+      box-shadow:0 -10px 28px rgba(0,0,0,0.55);
+    }
+    .controls button,
+    .controls a.btn {
+      padding:8px 14px;
+      border:1px solid #d3d8e4;
+      background:#ffffff;
+      color:#1b2433;
+      border-radius:11px;
+      cursor:pointer;
+      text-decoration:none;
+      font-weight:500;
+      transition:background .15s ease, color .15s ease, border-color .15s ease, transform .15s ease;
+    }
+    .controls button:hover,
+    .controls a.btn:hover {
+      background:#eef2ff;
+      border-color:#c5cbe2;
+      transform:translateY(-1px);
+    }
+    .controls button:disabled {
+      opacity:0.45;
+      cursor:not-allowed;
+      transform:none;
+    }
+    .controls .btn-requests {
+      position:relative;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+    }
+    .controls .btn-requests .badge {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:1.4em;
+      padding:0 0.45em;
+      border-radius:999px;
+      font-size:0.72rem;
+      background:#3b82f6;
+      color:#f8fafc;
+    }
+    .controls .btn-requests .badge[hidden] { display:none; }
+    .controls .btn-requests.alert {
+      background:#ffe58f;
+      border-color:#f5c54b;
+      color:#3a2b00;
+    }
+    [data-theme="dark"] .controls button,
+    [data-theme="dark"] .controls a.btn {
+      background:rgba(36,43,61,0.95);
+      border-color:rgba(103,114,140,0.7);
+      color:#e2e8f0;
+    }
+    [data-theme="dark"] .controls button:hover,
+    [data-theme="dark"] .controls a.btn:hover {
+      background:rgba(63,74,101,0.95);
+      border-color:rgba(135,146,170,0.85);
+    }
+    [data-theme="dark"] .controls .btn-requests .badge {
+      background:#60a5fa;
+      color:#0f172a;
+    }
+
+    .page-controls,
+    .chart-tools {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      background:#fff;
+      border:1px solid #d3d8e4;
+      border-radius:12px;
+      padding:6px 10px;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,0.8), inset 0 -1px 0 rgba(209,213,224,0.6);
+    }
+    .chart-tools {
+      display:none;
+    }
+    [data-theme="dark"] .page-controls,
+    [data-theme="dark"] .chart-tools {
+      background:rgba(32,39,56,0.95);
+      border-color:rgba(99,110,138,0.6);
+      box-shadow:none;
+    }
+    .controls .now {
+      font-weight:600;
+      padding:0 12px;
+      min-width:140px;
+      text-align:center;
+    }
+  </style>
+</head>
+<body>
+  <header>
+  <button id="themeToggle" class="btn" type="button" title="Toggle dark / light">🌗 Theme</button>
+    <a class="btn" href="{{ url_for('edit_setlist', setlist_id=sl.id) }}">← Back</a>
+    <button id="sidebarToggle" class="btn" type="button" aria-pressed="false" aria-label="Hide setlist sidebar">Hide Setlist</button>
+    <h1>Live Mode — {{ sl.name }}</h1>
+    <div class="spacer"></div>
+    <a class="btn" href="{{ toggle_url }}">{{ toggle_label }}</a>
+  </header>
+
+  <div class="wrap">
+    <aside class="sidebar" id="list"></aside>
+
+    <main class="stage">
+      <div class="viewer">
+        <div class="chart-wrapper" id="chartWrapper" aria-live="polite" aria-label="Chord chart">
+          <div class="chart-header">
+            <div class="chart-title" id="chartTitle"></div>
+            <div class="chart-meta" id="chartMeta"></div>
+          </div>
+          <div class="chart-lines" id="chartLines"></div>
+        </div>
+        <canvas id="pdfCanvas"></canvas>
+        <div id="thumbs"></div>
+        <div id="noPdf"></div>
+      </div>
+      <div class="controls">
+        <button id="prev">← Prev Song</button>
+        <div class="page-controls">
+          <button id="pagePrev">↑ Page</button>
+          <span id="pageInfo">-- / --</span>
+          <button id="pageNext">Page ↓</button>
+        </div>
+        <div class="chart-tools" id="chartTools">
+          <span class="label">Key</span>
+          <button type="button" class="btn-small" id="transposeDown">−</button>
+          <span id="transposeDisplay">0</span>
+          <button type="button" class="btn-small" id="transposeUp">+</button>
+          <span class="label">Capo</span>
+          <button type="button" class="btn-small" id="capoDown">−</button>
+          <span id="capoDisplay">0</span>
+          <button type="button" class="btn-small" id="capoUp">+</button>
+          <span class="label">Size</span>
+          <button type="button" class="btn-small" id="fontDown" aria-label="Decrease chart font size">A−</button>
+          <span id="fontDisplay" class="size-display">100%</span>
+          <button type="button" class="btn-small" id="fontUp" aria-label="Increase chart font size">A+</button>
+          <button type="button" class="btn-small" id="transposeReset" title="Reset transpose, capo, and size">Reset</button>
+        </div>
+        <div class="now" id="now">—</div>
+        <button id="viewToggle" type="button" class="btn" hidden>View: Chart</button>
+        <button id="requestsToggle" type="button" class="btn btn-requests{% if pending_requests %} alert{% endif %}" aria-expanded="false" aria-controls="requestsDrawer">
+          Requests
+          <span id="requestsBadge" class="badge"{% if not pending_requests %} hidden{% endif %}>{{ pending_requests }}</span>
+        </button>
+        <button id="next">Next Song →</button>
+      </div>
+    </main>
+  </div>
+
+  <div id="requestsBackdrop" class="requests-backdrop" hidden></div>
+  <section id="requestsDrawer" class="requests-drawer" aria-hidden="true" tabindex="-1">
+    <div class="requests-handle" aria-hidden="true"></div>
+    <header>
+      <h2>Audience Requests</h2>
+      <button id="requestsClose" class="requests-close" type="button" aria-label="Close requests drawer">Close</button>
+    </header>
+    <div id="requestsFeedback" class="requests-feedback" role="status" aria-live="polite"></div>
+    <div id="requestsContent" class="requests-content" role="list"></div>
+    <footer>
+      <a class="btn" href="{{ requests_url }}" target="_blank">Open full requests console</a>
+    </footer>
+  </section>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    const items = {{ items_json|safe }};
+    console.log('Live Mode items', items);
+    const listEl = document.getElementById('list');
+    const canvas = document.getElementById('pdfCanvas');
+    const ctx = canvas.getContext('2d');
+    const thumbsEl = document.getElementById('thumbs');
+    const noPdfEl = document.getElementById('noPdf');
+    const nowEl  = document.getElementById('now');
+    const prevBtn = document.getElementById('prev');
+    const nextBtn = document.getElementById('next');
+    const pagePrevBtn = document.getElementById('pagePrev');
+    const pageNextBtn = document.getElementById('pageNext');
+    const pageInfo = document.getElementById('pageInfo');
+    const chartWrapper = document.getElementById('chartWrapper');
+    const chartLines = document.getElementById('chartLines');
+    const chartTitle = document.getElementById('chartTitle');
+    const chartMeta = document.getElementById('chartMeta');
+    const chartTools = document.getElementById('chartTools');
+    const transposeDownBtn = document.getElementById('transposeDown');
+    const transposeUpBtn = document.getElementById('transposeUp');
+    const transposeResetBtn = document.getElementById('transposeReset');
+    const transposeDisplay = document.getElementById('transposeDisplay');
+    const capoDownBtn = document.getElementById('capoDown');
+    const capoUpBtn = document.getElementById('capoUp');
+    const capoDisplay = document.getElementById('capoDisplay');
+    const fontDownBtn = document.getElementById('fontDown');
+    const fontUpBtn = document.getElementById('fontUp');
+    const fontDisplay = document.getElementById('fontDisplay');
+    const viewToggleBtn = document.getElementById('viewToggle');
+    const requestsToggleBtn = document.getElementById('requestsToggle');
+    const requestsDrawer = document.getElementById('requestsDrawer');
+    const requestsBackdrop = document.getElementById('requestsBackdrop');
+    const requestsCloseBtn = document.getElementById('requestsClose');
+    const requestsContent = document.getElementById('requestsContent');
+    const requestsFeedback = document.getElementById('requestsFeedback');
+    const requestsBadge = document.getElementById('requestsBadge');
+    const wrapEl = document.querySelector('.wrap');
+    const sidebarToggleBtn = document.getElementById('sidebarToggle');
+    let SIDEBAR_STORAGE_KEY = 'liveSidebarCollapsed';
+
+    const SETLIST_ID = {{ sl.id }};
+    SIDEBAR_STORAGE_KEY = 'liveSidebarCollapsed:' + SETLIST_ID;
+const REQUESTS_JSON_URL = "{{ requests_json_url }}";
+const initialPendingRequests = {{ pending_requests }};
+const REQUESTS_REFRESH_MS = 15000;
+const REQUESTS_STALE_THRESHOLD = 5000;
+const REQUESTS_BADGE_MAX = 99;
+
+    const requestsState = {
+      open: false,
+      items: [],
+      loading: false,
+      lastFetched: 0,
+      lastData: null,
+      refreshTimer: null,
+    };
+let requestsFeedbackTimer = null;
+const NOTE_INDEX = {
+  'C':0,'B#':0,
+      'C#':1,'Db':1,
+      'D':2,
+      'D#':3,'Eb':3,
+      'E':4,'Fb':4,
+      'F':5,'E#':5,
+      'F#':6,'Gb':6,
+      'G':7,
+      'G#':8,'Ab':8,
+      'A':9,
+      'A#':10,'Bb':10,
+      'B':11,'Cb':11
+    };
+    const INDEX_TO_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const INDEX_TO_FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+
+const FONT_SCALE_MIN = 0.7;
+const FONT_SCALE_MAX = 1.8;
+const FONT_SCALE_STEP = 0.1;
+
+    function applySidebarCollapsed(collapsed, opts = {}) {
+      if (!wrapEl) return;
+      wrapEl.classList.toggle('sidebar-collapsed', !!collapsed);
+      if (sidebarToggleBtn) {
+        const label = collapsed ? 'Show Setlist' : 'Hide Setlist';
+        sidebarToggleBtn.textContent = label;
+        sidebarToggleBtn.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+        sidebarToggleBtn.setAttribute('aria-label', (collapsed ? 'Show' : 'Hide') + ' setlist sidebar');
+      }
+      if (listEl) {
+        listEl.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+      }
+      if (!opts.skipStorage) {
+        try {
+          localStorage.setItem(SIDEBAR_STORAGE_KEY, collapsed ? '1' : '0');
+        } catch (err) {
+          console.warn('Unable to persist sidebar state', err);
+        }
+      }
+    }
+
+    function toggleSidebarCollapsed() {
+      if (!wrapEl) return;
+      const next = !wrapEl.classList.contains('sidebar-collapsed');
+      applySidebarCollapsed(next);
+    }
+
+    function initSidebarCollapse() {
+      if (!wrapEl) return;
+      let saved = null;
+      try {
+        saved = localStorage.getItem(SIDEBAR_STORAGE_KEY);
+      } catch (err) {
+        console.warn('Sidebar state load failed', err);
+      }
+      applySidebarCollapsed(saved === '1', { skipStorage: true });
+      if (sidebarToggleBtn) {
+        sidebarToggleBtn.addEventListener('click', toggleSidebarCollapsed);
+      }
+    }
+
+    function clampFontScale(value) {
+      if (!Number.isFinite(value)) return 1;
+      const rounded = Math.round(value * 10) / 10;
+      if (rounded < FONT_SCALE_MIN) return FONT_SCALE_MIN;
+      if (rounded > FONT_SCALE_MAX) return FONT_SCALE_MAX;
+      return rounded;
+    }
+
+    function applyFontScale(scale, options = {}) {
+      const clamped = clampFontScale(scale);
+      currentFontScale = clamped;
+      if (chartWrapper) {
+        chartWrapper.style.setProperty('--chart-font-scale', String(clamped));
+      }
+      if (fontDisplay) {
+        fontDisplay.textContent = Math.round(clamped * 100) + '%';
+      }
+      if (!options.skipPersist) {
+        persistChartPrefs();
+      }
+    }
+
+    function changeFontScale(delta) {
+      const target = currentFontScale + delta;
+      const clamped = clampFontScale(target);
+      if (Math.abs(clamped - currentFontScale) < 0.001) return;
+      applyFontScale(clamped);
+      if (currentItem && currentItem.has_chart) {
+        updateChartControls(currentItem);
+      }
+    }
+
+let currentViewMode = 'pdf';
+let currentTranspose = 0;
+let currentCapo = 0;
+let currentHighlightSet = new Set();
+let currentFontScale = 1;
+
+    function isLikelyChordSymbol(token) {
+      if (!token) return false;
+      const normalized = token.trim().replace(/\u266d/g, 'b').replace(/\u266f/g, '#');
+      if (!normalized) return false;
+      if (/^N\.?C\.?$/i.test(normalized)) return true;
+      if (/\s/.test(normalized)) return false;
+      if (!/^[A-Ga-g][#b]?/.test(normalized)) return false;
+      if (!/^[A-Ga-g][#b]?(?:add|sus|maj|min|aug|dim|m|M|[0-9]|[#b\/\+\-\(\)°ø])*$/i.test(normalized)) return false;
+      return true;
+    }
+
+    function chartStateKey(songId) {
+      return 'liveChart:' + SETLIST_ID + ':' + songId;
+    }
+
+    function loadChartPrefs(songId) {
+      try {
+        const raw = localStorage.getItem(chartStateKey(songId));
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.highlights)) {
+          parsed.highlights = parsed.highlights.map(Number).filter(n => Number.isInteger(n));
+        } else {
+          parsed.highlights = [];
+        }
+        if (!parsed || !Number.isFinite(parsed.fontScale)) {
+          if (!parsed) {
+            return {};
+          }
+          parsed.fontScale = 1;
+        } else {
+          parsed.fontScale = clampFontScale(parsed.fontScale);
+        }
+        return parsed || {};
+      } catch (err) {
+        console.warn('Chart state parse error', err);
+        return {};
+      }
+    }
+
+    function persistChartPrefs() {
+      if (!currentItem || !currentItem.song_id) return;
+      const payload = {
+        transpose: currentTranspose,
+        capo: currentCapo,
+        view: currentViewMode,
+        highlights: Array.from(currentHighlightSet),
+        fontScale: currentFontScale,
+      };
+      try {
+        localStorage.setItem(chartStateKey(currentItem.song_id), JSON.stringify(payload));
+      } catch (err) {
+        console.warn('Unable to persist chart prefs', err);
+      }
+    }
+
+    function formatSemitone(val) {
+      if (!Number.isFinite(val)) return '0';
+      if (val === 0) return '0';
+      return (val > 0 ? '+' : '') + val;
+    }
+
+    function transposeNote(token, semitones, preferFlat, originalToken) {
+      if (!token) return token;
+      let key = token.toUpperCase();
+      if (!NOTE_INDEX.hasOwnProperty(key)) return token;
+      let idx = NOTE_INDEX[key];
+      if (!Number.isInteger(idx)) return token;
+      let shifted = (idx + semitones) % 12;
+      if (shifted < 0) shifted += 12;
+      let name = preferFlat ? INDEX_TO_FLAT[shifted] : INDEX_TO_SHARP[shifted];
+      if (originalToken && originalToken[0] === originalToken[0].toLowerCase()) {
+        name = name[0].toLowerCase() + name.slice(1);
+      }
+      return name;
+    }
+
+    function transposeChordPart(symbol, semitones) {
+      if (!symbol) return symbol;
+      const match = symbol.match(/^([A-Ga-g][#b]?)(.*)$/);
+      if (!match) return symbol;
+      const originalRoot = match[1];
+      const suffix = match[2] || '';
+      const preferFlat = originalRoot.includes('b');
+      let normalized = originalRoot[0].toUpperCase();
+      if (originalRoot.length > 1) {
+        const accidental = originalRoot[1];
+        if (accidental === '#' || accidental === '♯') {
+          normalized += '#';
+        } else if (accidental && (accidental.toLowerCase() === 'b' || accidental === '♭')) {
+          normalized += 'b';
+        }
+      }
+      const resultRoot = transposeNote(normalized, semitones, preferFlat, originalRoot);
+      const adjustedRoot = originalRoot[0] === originalRoot[0].toLowerCase()
+        ? resultRoot[0].toLowerCase() + resultRoot.slice(1)
+        : resultRoot;
+      return adjustedRoot + suffix;
+    }
+
+    function transposeChordSymbol(symbol, semitones) {
+      if (!symbol) return symbol;
+      if (!Number.isFinite(semitones) || semitones === 0) return symbol;
+      const parts = symbol.split('/');
+      const main = transposeChordPart(parts[0], semitones);
+      if (parts.length > 1) {
+        const bass = transposeChordPart(parts[1], semitones);
+        return main + '/' + bass;
+      }
+      return main;
+    }
+
+    function transposeKeyLabel(label, semitones) {
+      if (!label || !Number.isFinite(semitones) || semitones === 0) return label;
+      const trimmed = label.trim();
+      const match = trimmed.match(/^([A-Ga-g][#b]?)(.*)$/);
+      if (!match) return label;
+      const root = transposeChordPart(match[1], semitones);
+      return root + match[2];
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, (ch) => {
+        switch (ch) {
+          case '&': return '&amp;';
+          case '<': return '&lt;';
+          case '>': return '&gt;';
+          case '"': return '&quot;';
+          case "'": return '&#39;';
+          default: return ch;
+        }
+      });
+    }
+
+    function updateRequestsBadge(count) {
+      if (!requestsBadge || !requestsToggleBtn) return;
+      if (count && count > 0) {
+        const display = count > REQUESTS_BADGE_MAX ? REQUESTS_BADGE_MAX + '+' : String(count);
+        requestsBadge.textContent = display;
+        requestsBadge.hidden = false;
+        requestsToggleBtn.classList.add('alert');
+      } else {
+        requestsBadge.textContent = '';
+        requestsBadge.hidden = true;
+        requestsToggleBtn.classList.remove('alert');
+      }
+    }
+
+    function clearRequestsFeedback() {
+      if (!requestsFeedback) return;
+      if (requestsFeedbackTimer) {
+        clearTimeout(requestsFeedbackTimer);
+        requestsFeedbackTimer = null;
+      }
+      requestsFeedback.textContent = '';
+      requestsFeedback.className = 'requests-feedback';
+    }
+
+    function showRequestsFeedback(message, variant = '') {
+      if (!requestsFeedback) return;
+      clearRequestsFeedback();
+      if (!message) return;
+      if (variant) {
+        requestsFeedback.classList.add(variant);
+      }
+      requestsFeedback.textContent = message;
+      requestsFeedbackTimer = setTimeout(() => {
+        clearRequestsFeedback();
+      }, 4000);
+    }
+
+    function setRequestsBusy(isBusy) {
+      if (!requestsContent) return;
+      if (isBusy) {
+        requestsContent.setAttribute('aria-busy', 'true');
+      } else {
+        requestsContent.removeAttribute('aria-busy');
+      }
+    }
+
+    function renderRequestsLoading() {
+      if (!requestsContent) return;
+      setRequestsBusy(true);
+      requestsContent.innerHTML = '<p class="requests-empty">Loading requests…</p>';
+    }
+
+    function formatRequestMeta(req) {
+      const parts = [];
+      if (req.createdAt) {
+        const dt = new Date(req.createdAt);
+        if (!Number.isNaN(dt.getTime())) {
+          parts.push(dt.toLocaleString([], { hour: 'numeric', minute: '2-digit' }));
+        }
+      }
+      if (req.fromName) parts.push(req.fromName);
+      if (req.fromContact) parts.push(req.fromContact);
+      return parts.length ? 'Requested ' + parts.join(' · ') : '';
+    }
+
+    function createActionButton(label, variant, handler) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = label;
+      if (variant) btn.dataset.variant = variant;
+      btn.addEventListener('click', () => handler(btn));
+      return btn;
+    }
+
+    function buildRequestCard(req) {
+      const card = document.createElement('article');
+      card.className = 'request-card';
+      card.setAttribute('role', 'listitem');
+
+      const header = document.createElement('div');
+      header.className = 'request-card-header';
+      const title = document.createElement('h4');
+      title.textContent = req.label || 'Request';
+      header.appendChild(title);
+      const status = document.createElement('span');
+      status.className = 'request-status';
+      status.textContent = req.statusLabel || (req.status || '').toUpperCase();
+      header.appendChild(status);
+      card.appendChild(header);
+
+      if (req.freeText && (!req.songTitle || req.freeText !== req.label)) {
+        const note = document.createElement('div');
+        note.className = 'request-note';
+        note.textContent = req.freeText;
+        card.appendChild(note);
+      }
+
+      const metaText = formatRequestMeta(req);
+      if (metaText) {
+        const meta = document.createElement('div');
+        meta.className = 'request-meta';
+        meta.textContent = metaText;
+        card.appendChild(meta);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'requests-actions';
+
+      if (req.status === 'new') {
+        actions.appendChild(createActionButton('Queue', 'primary', (btn) => handleRequestsAction(btn, req, { type: 'status', status: 'queued' })));
+        actions.appendChild(createActionButton('Decline', 'danger', (btn) => handleRequestsAction(btn, req, { type: 'status', status: 'declined' })));
+        if (req.hasSong) {
+          actions.appendChild(createActionButton('Add to setlist', 'accent', (btn) => handleRequestsAction(btn, req, { type: 'add' })));
+        }
+      } else if (req.status === 'queued') {
+        actions.appendChild(createActionButton('Mark done', 'success', (btn) => handleRequestsAction(btn, req, { type: 'status', status: 'done' })));
+        actions.appendChild(createActionButton('Decline', 'danger', (btn) => handleRequestsAction(btn, req, { type: 'status', status: 'declined' })));
+        if (req.hasSong) {
+          actions.appendChild(createActionButton('Add to setlist', 'accent', (btn) => handleRequestsAction(btn, req, { type: 'add' })));
+        }
+        actions.appendChild(createActionButton('Reopen', 'primary', (btn) => handleRequestsAction(btn, req, { type: 'status', status: 'new' })));
+      }
+
+      if (actions.childElementCount > 0) {
+        card.appendChild(actions);
+      }
+
+      return card;
+    }
+
+    function createRequestSection(title, requestsList) {
+      const section = document.createElement('section');
+      section.className = 'requests-section';
+      const heading = document.createElement('h3');
+      heading.textContent = title;
+      section.appendChild(heading);
+      requestsList.forEach((req) => {
+        section.appendChild(buildRequestCard(req));
+      });
+      return section;
+    }
+
+    function renderRequestsContent(items) {
+      if (!requestsContent) return;
+      requestsContent.innerHTML = '';
+      const newItems = items.filter((req) => req.status === 'new');
+      const queuedItems = items.filter((req) => req.status === 'queued');
+      if (!newItems.length && !queuedItems.length) {
+        const empty = document.createElement('p');
+        empty.className = 'requests-empty';
+        empty.textContent = 'No pending requests right now.';
+        requestsContent.appendChild(empty);
+        setRequestsBusy(false);
+        return;
+      }
+      if (newItems.length) {
+        requestsContent.appendChild(createRequestSection('New', newItems));
+      }
+      if (queuedItems.length) {
+        requestsContent.appendChild(createRequestSection('Queued', queuedItems));
+      }
+      setRequestsBusy(false);
+    }
+
+    async function performRequestMutation(req, action) {
+      if (!req || !action) throw new Error('Invalid request action');
+      let endpoint = '';
+      let payload = {};
+      if (action.type === 'status') {
+        endpoint = `/requests/${req.id}/status`;
+        payload = { status: action.status };
+      } else if (action.type === 'add') {
+        endpoint = `/requests/${req.id}/add`;
+        payload = {};
+      } else {
+        throw new Error('Unsupported action');
+      }
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const text = await res.text();
+      let data = null;
+      if (text) {
+        try { data = JSON.parse(text); } catch (err) { data = null; }
+      }
+      if (!res.ok || !data || data.ok === false) {
+        const errorMessage = (data && data.error) ? data.error : `Action failed (${res.status})`;
+        throw new Error(errorMessage);
+      }
+      await loadRequests({ force: true, silent: true });
+      return data;
+    }
+
+    async function handleRequestsAction(button, req, action) {
+      if (!button) return;
+      button.disabled = true;
+      button.classList.add('loading');
+      try {
+        const result = await performRequestMutation(req, action);
+        showRequestsFeedback(result.message || 'Request updated', 'success');
+      } catch (err) {
+        showRequestsFeedback(err.message || 'Unable to update request', 'error');
+      } finally {
+        button.disabled = false;
+        button.classList.remove('loading');
+      }
+    }
+
+    async function loadRequests({ force = false, silent = false } = {}) {
+      if (!REQUESTS_JSON_URL) return null;
+      const now = Date.now();
+      if (!force && requestsState.lastFetched && (now - requestsState.lastFetched) < REQUESTS_STALE_THRESHOLD) {
+        return requestsState.lastData;
+      }
+      if (requestsState.loading) {
+        return requestsState.lastData;
+      }
+      requestsState.loading = true;
+      try {
+        if (requestsState.open && !silent) {
+          renderRequestsLoading();
+        }
+        const res = await fetch(REQUESTS_JSON_URL, {
+          headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          cache: 'no-store',
+        });
+        if (!res.ok) {
+          throw new Error(`Failed to load requests (${res.status})`);
+        }
+        const data = await res.json();
+        requestsState.items = data.requests || [];
+        requestsState.lastFetched = now;
+        requestsState.lastData = data;
+        updateRequestsBadge(data.pendingCount || 0);
+        if (requestsState.open) {
+          renderRequestsContent(requestsState.items);
+        }
+        return data;
+      } catch (err) {
+        if (requestsState.open && requestsContent) {
+          requestsContent.innerHTML = '<p class="requests-empty">Unable to load requests.</p>';
+          setRequestsBusy(false);
+        }
+        if (!silent) {
+          showRequestsFeedback(err.message || 'Unable to load requests', 'error');
+        }
+        return null;
+      } finally {
+        requestsState.loading = false;
+      }
+    }
+
+    function ensureRequestsPolling() {
+      if (!REQUESTS_JSON_URL || requestsState.refreshTimer) return;
+      requestsState.refreshTimer = setInterval(() => {
+        if (document.hidden) return;
+        if (requestsState.open) {
+          loadRequests({ force: true, silent: true });
+        } else {
+          loadRequests({ force: false, silent: true });
+        }
+      }, REQUESTS_REFRESH_MS);
+    }
+
+    function openRequestsDrawer() {
+      if (!requestsDrawer || requestsState.open) return;
+      requestsState.open = true;
+      if (requestsBackdrop) {
+        requestsBackdrop.hidden = false;
+        requestsBackdrop.classList.add('visible');
+      }
+      requestsDrawer.classList.add('open');
+      requestsDrawer.setAttribute('aria-hidden', 'false');
+      if (requestsToggleBtn) {
+        requestsToggleBtn.setAttribute('aria-expanded', 'true');
+      }
+      clearRequestsFeedback();
+      if (requestsContent) {
+        requestsContent.scrollTop = 0;
+        renderRequestsContent(requestsState.items);
+      }
+      loadRequests({ force: true });
+      if (requestsCloseBtn) {
+        requestsCloseBtn.focus({ preventScroll: true });
+      } else {
+        requestsDrawer.focus({ preventScroll: true });
+      }
+    }
+
+    function closeRequestsDrawer() {
+      if (!requestsDrawer || !requestsState.open) return;
+      requestsState.open = false;
+      requestsDrawer.classList.remove('open');
+      requestsDrawer.setAttribute('aria-hidden', 'true');
+      if (requestsToggleBtn) {
+        requestsToggleBtn.setAttribute('aria-expanded', 'false');
+      }
+      clearRequestsFeedback();
+      if (requestsBackdrop) {
+        requestsBackdrop.classList.remove('visible');
+        setTimeout(() => {
+          if (!requestsState.open && requestsBackdrop) {
+            requestsBackdrop.hidden = true;
+          }
+        }, 220);
+      }
+      if (requestsToggleBtn) {
+        requestsToggleBtn.focus({ preventScroll: true });
+      }
+    }
+
+    function toggleRequestsDrawer() {
+      if (requestsState.open) {
+        closeRequestsDrawer();
+      } else {
+        openRequestsDrawer();
+      }
+    }
+
+    function setupRequestsUI() {
+      if (!requestsToggleBtn || !requestsDrawer) return;
+      updateRequestsBadge(initialPendingRequests);
+      requestsToggleBtn.addEventListener('click', toggleRequestsDrawer);
+      if (requestsCloseBtn) {
+        requestsCloseBtn.addEventListener('click', closeRequestsDrawer);
+      }
+      if (requestsBackdrop) {
+        requestsBackdrop.addEventListener('click', closeRequestsDrawer);
+      }
+      ensureRequestsPolling();
+      loadRequests({ force: false, silent: true });
+    }
+
+    let pdfDoc = null;
+    let pageNum = 1;
+    let pageCount = 0;
+    let pageRendering = false;
+    let pageNumPending = null;
+    let currentItemIdx = 0;
+    let currentItem = null;
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+    function saveIndex(i) {
+      try { localStorage.setItem('liveIndex:' + SETLIST_ID, String(i)); } catch(e){}
+    }
+    function loadIndex() {
+      try {
+        const v = localStorage.getItem('liveIndex:' + SETLIST_ID);
+        return v == null ? null : Math.max(0, Math.min(items.length-1, parseInt(v,10)||0));
+      } catch(e){ return null; }
+    }
+
+    function pageStateKey(songId){
+      return 'livePage:' + SETLIST_ID + ':' + songId;
+    }
+    function savePage(num){
+      if (!currentItem || !currentItem.song_id) return;
+      try { localStorage.setItem(pageStateKey(currentItem.song_id), String(num)); } catch(e){}
+    }
+    function loadSavedPage(songId){
+      try {
+        const v = localStorage.getItem(pageStateKey(songId));
+        return v ? Math.max(1, parseInt(v,10)||1) : 1;
+      } catch(e){ return 1; }
+    }
+
+    function renderList(activeIdx) {
+      listEl.innerHTML = '';
+      if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'item muted';
+        empty.textContent = 'No songs loaded.';
+        listEl.appendChild(empty);
+        console.warn('[LiveMode] No items available for this setlist.');
+        return;
+      }
+      items.forEach((it, idx) => {
+        const div = document.createElement('div');
+        div.className = 'item' + (idx === activeIdx ? ' active' : '');
+        div.dataset.idx = idx;
+
+        const pos = document.createElement('span');
+        pos.className = 'pos';
+        pos.textContent = '#' + it.pos;
+
+        const title = document.createElement('span');
+        title.className = 'title';
+        title.textContent = it.title;
+
+        const tag = document.createElement('span');
+        tag.className = 'tag muted';
+        let tagLabel = 'Fallback';
+        if (it.has_chart && it.has_pdf) tagLabel = 'Chart + PDF';
+        else if (it.has_chart) tagLabel = 'Chart';
+        else if (it.has_pdf) tagLabel = 'PDF';
+        tag.textContent = tagLabel;
+
+        div.appendChild(pos);
+        div.appendChild(title);
+        div.appendChild(tag);
+        div.addEventListener('click', () => show(idx));
+        listEl.appendChild(div);
+      });
+    }
+
+    function clearViewer(){
+      canvas.style.display = 'none';
+      canvas.width = 0;
+      canvas.height = 0;
+      canvas.style.width = '0px';
+      canvas.style.height = '0px';
+      if (thumbsEl) {
+        thumbsEl.innerHTML = '';
+        thumbsEl.style.display = 'none';
+      }
+      if (chartLines) chartLines.innerHTML = '';
+      if (chartWrapper) chartWrapper.style.display = 'none';
+      if (chartTitle) chartTitle.textContent = '';
+      if (chartMeta) chartMeta.textContent = '';
+      if (chartTools) chartTools.style.display = 'none';
+      if (viewToggleBtn) viewToggleBtn.hidden = true;
+      pagePrevBtn.disabled = pageNextBtn.disabled = true;
+      pageInfo.textContent = '-- / --';
+      noPdfEl.style.display = 'none';
+      noPdfEl.innerHTML = '';
+    }
+
+    function show(idx) {
+      if (items.length === 0) {
+        nowEl.textContent = '—';
+        noPdfEl.innerHTML = '<p>No songs are currently in this setlist.</p>';
+        noPdfEl.style.display = 'flex';
+        console.warn('[LiveMode] show() called with empty items.');
+        return;
+      }
+      idx = Math.max(0, Math.min(items.length-1, idx));
+      const it = items[idx];
+      nowEl.textContent = (idx+1) + ' / ' + items.length + '  —  ' + it.title;
+      saveIndex(idx);
+      renderList(idx);
+      history.replaceState({}, '', updateQueryString('i', idx));
+      currentItemIdx = idx;
+      currentItem = it;
+      loadDocument(it);
+    }
+
+    function updateQueryString(key, value) {
+      const url = new URL(location.href);
+      url.searchParams.set(key, value);
+      return url.toString();
+    }
+
+    function nextSong() { if (items.length) show((loadIndex() ?? 0) + 1); }
+    function prevSong() { if (items.length) show((loadIndex() ?? 0) - 1); }
+
+    function updatePageControls(){
+      if (!pdfDoc || currentViewMode !== 'pdf') {
+        pageInfo.textContent = '-- / --';
+        pagePrevBtn.disabled = true;
+        pageNextBtn.disabled = true;
+        Array.from(thumbsEl.querySelectorAll('.thumb')).forEach((el) => {
+          el.classList.remove('active');
+        });
+        return;
+      }
+      pageInfo.textContent = pageCount ? (pageNum + ' / ' + pageCount) : '-- / --';
+      pagePrevBtn.disabled = pageNum <= 1;
+      pageNextBtn.disabled = pageNum >= pageCount;
+      Array.from(thumbsEl.querySelectorAll('.thumb')).forEach((el, idx) => {
+        el.classList.toggle('active', idx + 1 === pageNum);
+      });
+    }
+
+    function renderPage(num){
+      if (!pdfDoc) return;
+      pageRendering = true;
+      pdfDoc.getPage(num).then(page => {
+        const containerWidth = canvas.parentElement.clientWidth - 8;
+        const viewport = page.getViewport({ scale: 1 });
+        const scale = Math.max(0.1, containerWidth / viewport.width);
+        const scaled = page.getViewport({ scale });
+        const outputScale = window.devicePixelRatio || 1;
+
+        canvas.width = scaled.width * outputScale;
+        canvas.height = scaled.height * outputScale;
+        canvas.style.width = scaled.width + 'px';
+        canvas.style.height = scaled.height + 'px';
+
+        const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+        return page.render({ canvasContext: ctx, viewport: scaled, transform }).promise;
+      }).then(() => {
+        pageRendering = false;
+        if (pageNumPending !== null){
+          const numPending = pageNumPending;
+          pageNumPending = null;
+          renderPage(numPending);
+        }
+      }).catch(err => console.error('PDF render error', err))
+      .finally(() => {
+        updatePageControls();
+      });
+      savePage(num);
+    }
+
+    function queueRenderPage(num){
+      if (pageRendering){
+        pageNumPending = num;
+      } else {
+        renderPage(num);
+      }
+    }
+
+    function buildThumbnails(){
+      thumbsEl.innerHTML = '';
+      if (!pdfDoc) return;
+      for (let i = 1; i <= pdfDoc.numPages; i++){
+        const wrapper = document.createElement('div');
+        wrapper.className = 'thumb';
+        const c = document.createElement('canvas');
+        wrapper.appendChild(c);
+        wrapper.addEventListener('click', () => {
+          if (pageNum !== i){ pageNum = i; queueRenderPage(i); }
+        });
+        thumbsEl.appendChild(wrapper);
+
+        pdfDoc.getPage(i).then(page => {
+          const viewport = page.getViewport({ scale: 0.2 });
+          const ctxThumb = c.getContext('2d');
+          c.width = viewport.width;
+          c.height = viewport.height;
+          return page.render({ canvasContext: ctxThumb, viewport }).promise;
+        }).catch(err => console.warn('Thumb render', err));
+      }
+    }
+
+    let currentPdfItemId = null;
+
+    function hidePdfViewer() {
+      canvas.style.display = 'none';
+      canvas.width = 0;
+      canvas.height = 0;
+      canvas.style.width = '0px';
+      canvas.style.height = '0px';
+      if (thumbsEl) {
+        thumbsEl.style.display = 'none';
+      }
+      pagePrevBtn.disabled = true;
+      pageNextBtn.disabled = true;
+      pageInfo.textContent = '-- / --';
+    }
+
+    function loadPdfDocument(item, forceReload = true) {
+      if (!item || !item.has_pdf) return;
+      canvas.style.display = 'block';
+      if (thumbsEl) {
+        thumbsEl.style.display = 'flex';
+      }
+      noPdfEl.style.display = 'none';
+      noPdfEl.innerHTML = '';
+
+      if (!forceReload && currentPdfItemId === item.song_id && pdfDoc) {
+        pageCount = pdfDoc.numPages;
+        pageNum = Math.max(1, Math.min(pageCount, pageNum || 1));
+        buildThumbnails();
+        queueRenderPage(pageNum);
+        return;
+      }
+
+      pdfDoc = null;
+      pageNum = 1;
+      pageCount = 0;
+      updatePageControls();
+      const loadingTask = pdfjsLib.getDocument({ url: item.url + '?t=' + Date.now() });
+      loadingTask.promise.then(doc => {
+        pdfDoc = doc;
+        currentPdfItemId = item.song_id;
+        pageCount = doc.numPages;
+        pageNum = Math.min(doc.numPages, loadSavedPage(item.song_id) || 1);
+        buildThumbnails();
+        queueRenderPage(pageNum);
+      }).catch(err => {
+        console.error('PDF load error', err);
+        hidePdfViewer();
+        noPdfEl.innerHTML = '<p>Failed to load PDF.</p><p><a class="btn" target="_blank" href="' + item.url + '">Open fallback view</a></p>';
+        noPdfEl.style.display = 'flex';
+      });
+    }
+
+    function updateChartMeta(item) {
+      if (!chartMeta || !item) return;
+      const parts = [];
+      const baseKey = (item.song_key || '').trim();
+      const displayKey = baseKey ? transposeKeyLabel(baseKey, currentTranspose - currentCapo) : '';
+      const effectiveKey = (displayKey || '').trim() || baseKey;
+      if (effectiveKey) {
+        parts.push('Key of ' + effectiveKey);
+        if (baseKey && effectiveKey !== baseKey) {
+          parts.push('Base ' + baseKey);
+        }
+      }
+      if (currentCapo > 0) {
+        parts.push('Capo ' + currentCapo);
+      }
+      if (currentTranspose !== 0) {
+        parts.push('Transpose ' + formatSemitone(currentTranspose));
+      }
+      chartMeta.textContent = parts.join(' • ');
+    }
+
+    function updateChartControls(item) {
+      if (!chartTools || !item || !item.has_chart) {
+        if (chartTools) chartTools.style.display = 'none';
+        return;
+      }
+      transposeDisplay.textContent = formatSemitone(currentTranspose);
+      capoDisplay.textContent = String(currentCapo);
+      if (fontDisplay) {
+        fontDisplay.textContent = Math.round(currentFontScale * 100) + '%';
+      }
+      if (fontDownBtn) {
+        fontDownBtn.disabled = currentFontScale <= FONT_SCALE_MIN + 0.001;
+      }
+      if (fontUpBtn) {
+        fontUpBtn.disabled = currentFontScale >= FONT_SCALE_MAX - 0.001;
+      }
+      updateChartMeta(item);
+    }
+
+    function renderChart(item) {
+      if (!chartLines || !item || !item.has_chart) return;
+      chartLines.innerHTML = '';
+      const lines = (item.chart || '').split(/\r?\n/);
+      const effectiveSteps = currentTranspose - currentCapo;
+      let chordIndex = 0;
+      const NBSP = '\u00A0';
+
+      const SECTION_KEYWORDS = /^(title|section|subtitle|verse|chorus|bridge|intro|outro|pre-?chorus|tag|coda)$/i;
+      const COMMENT_KEYWORDS = /^(comment|note)$/i;
+
+      function appendDirective(text, className) {
+        if (!text) return;
+        const directiveLine = document.createElement('div');
+        directiveLine.className = 'chart-line ' + className;
+        directiveLine.textContent = text;
+        chartLines.appendChild(directiveLine);
+      }
+
+      lines.forEach((rawLine) => {
+        const line = rawLine ?? '';
+        const trimmed = line.trim();
+        if (!trimmed) {
+          const spacerBlock = document.createElement('div');
+          spacerBlock.className = 'chart-line';
+          spacerBlock.innerHTML = '&nbsp;';
+          chartLines.appendChild(spacerBlock);
+          return;
+        }
+
+        if (/^\[[^\]]+\]$/.test(trimmed) && !isLikelyChordSymbol(trimmed.slice(1, -1))) {
+          appendDirective(trimmed.slice(1, -1).trim(), 'chart-section');
+          return;
+        }
+
+        const moustache = trimmed.match(/^\{\{\s*([^:}]+)\s*:(.*)\}\}$/);
+        if (moustache) {
+          const kind = moustache[1].trim();
+          const value = moustache[2].trim();
+          if (!value) return;
+          if (SECTION_KEYWORDS.test(kind)) {
+            appendDirective(value, 'chart-section');
+          } else if (COMMENT_KEYWORDS.test(kind)) {
+            appendDirective(value, 'chart-comment');
+          } else {
+            appendDirective(kind + ': ' + value, 'chart-directive');
+          }
+          return;
+        }
+
+        if (/^\{.*\}$/.test(trimmed)) {
+          const directive = trimmed.slice(1, -1);
+          const dirMatch = directive.match(/^([^:]+):(.*)$/);
+          if (dirMatch) {
+            const key = dirMatch[1].trim();
+            const value = dirMatch[2].trim();
+            if (SECTION_KEYWORDS.test(key)) {
+              appendDirective(value || key, 'chart-section');
+            } else if (COMMENT_KEYWORDS.test(key)) {
+              appendDirective(value || key, 'chart-comment');
+            } else {
+              appendDirective((value ? key + ': ' + value : key), 'chart-directive');
+            }
+          } else {
+            appendDirective(directive.trim(), 'chart-directive');
+          }
+          return;
+        }
+
+        if (trimmed.startsWith('#')) {
+          appendDirective(trimmed.replace(/^#\s*/, ''), 'chart-comment');
+          return;
+        }
+
+        const lineEl = document.createElement('div');
+        lineEl.className = 'chart-line';
+        let hasChord = false;
+        let textBuffer = '';
+        const cells = [];
+
+        const pushCell = (char, chordSymbol) => {
+          let lyricChar = char;
+          if (lyricChar === '\t') {
+            lyricChar = NBSP;
+          }
+          if (!lyricChar || lyricChar === ' ') {
+            lyricChar = NBSP;
+          }
+          const cell = {
+            lyric: lyricChar,
+            chord: '',
+            chordIndex: null,
+            highlighted: false,
+          };
+          if (chordSymbol) {
+            const rendered = effectiveSteps ? transposeChordSymbol(chordSymbol, effectiveSteps) : chordSymbol;
+            cell.chord = rendered;
+            cell.chordIndex = chordIndex;
+            cell.highlighted = currentHighlightSet.has(chordIndex);
+            chordIndex += 1;
+            hasChord = true;
+          }
+          cells.push(cell);
+        };
+
+        const flushTextBuffer = () => {
+          if (!textBuffer) return;
+          for (const ch of textBuffer) {
+            if (ch === '\t') {
+              for (let i = 0; i < 4; i += 1) {
+                pushCell(NBSP, null);
+              }
+            } else {
+              pushCell(ch, null);
+            }
+          }
+          textBuffer = '';
+        };
+
+        const appendChordChar = (lyricChar, chordSymbol) => {
+          flushTextBuffer();
+          if (lyricChar === '\t') {
+            pushCell(NBSP, chordSymbol);
+            for (let i = 0; i < 3; i += 1) pushCell(NBSP, null);
+          } else {
+            pushCell(lyricChar, chordSymbol);
+          }
+        };
+
+        const tokens = [];
+        let buffer = '';
+
+        for (let idx = 0; idx < line.length; idx++) {
+          const ch = line[idx];
+          if (ch === '\\' && idx + 1 < line.length) {
+            buffer += line[idx + 1];
+            idx += 1;
+            continue;
+          }
+          if (ch === '[') {
+            const closing = line.indexOf(']', idx + 1);
+            if (closing !== -1) {
+              const candidateRaw = line.slice(idx + 1, closing);
+              const candidate = candidateRaw.trim();
+              if (candidate && isLikelyChordSymbol(candidate)) {
+                if (buffer) {
+                  tokens.push({ type: 'text', text: buffer });
+                  buffer = '';
+                }
+                tokens.push({ type: 'chord', symbol: candidate });
+                idx = closing;
+                continue;
+              }
+            }
+          }
+          buffer += ch;
+        }
+
+        if (buffer) {
+          tokens.push({ type: 'text', text: buffer });
+        }
+
+        const chordQueue = [];
+
+        const hasUpcomingLyric = (tokenIdx, charIdx) => {
+          for (let t = tokenIdx; t < tokens.length; t += 1) {
+            const token = tokens[t];
+            if (token.type === 'chord') {
+              if (t === tokenIdx && charIdx > 0) {
+                continue;
+              }
+              return false;
+            }
+            const start = (t === tokenIdx) ? charIdx : 0;
+            for (let i = start; i < token.text.length; i += 1) {
+              const ch = token.text[i];
+              if (ch !== ' ' && ch !== '\t') {
+                return true;
+              }
+            }
+          }
+          return false;
+        };
+
+        tokens.forEach((token, tokenIdx) => {
+          if (token.type === 'chord') {
+            chordQueue.push(token.symbol);
+            return;
+          }
+          for (let i = 0; i < token.text.length; i += 1) {
+            const ch = token.text[i];
+            const isWhitespace = ch === ' ' || ch === '\t';
+            if (chordQueue.length && (!isWhitespace || !hasUpcomingLyric(tokenIdx, i + 1))) {
+              appendChordChar(ch, chordQueue.shift());
+            } else {
+              textBuffer += ch;
+            }
+          }
+        });
+
+        flushTextBuffer();
+        while (chordQueue.length) {
+          appendChordChar(NBSP, chordQueue.shift());
+        }
+
+        if (hasChord) {
+          lineEl.classList.add('has-chords');
+          cells.forEach((cell) => {
+            const span = document.createElement('span');
+            span.className = 'chord-char';
+            if (!cell.chord) {
+              span.classList.add('no-chord');
+            } else {
+              span.dataset.chord = cell.chord;
+              span.dataset.index = String(cell.chordIndex);
+              if (cell.highlighted) {
+                span.classList.add('highlighted');
+              }
+            }
+            span.textContent = cell.lyric;
+            lineEl.appendChild(span);
+          });
+        } else {
+          const plain = document.createElement('span');
+          plain.className = 'lyric-run';
+          plain.textContent = line.replace(/\t/g, '    ');
+          lineEl.appendChild(plain);
+        }
+
+        chartLines.appendChild(lineEl);
+      });
+      updateChartControls(item);
+    }
+
+    function updateViewToggle(item) {
+      if (!viewToggleBtn) return;
+      if (!item || !(item.has_chart && item.has_pdf)) {
+        viewToggleBtn.hidden = true;
+        return;
+      }
+      viewToggleBtn.hidden = false;
+      viewToggleBtn.textContent = currentViewMode === 'chart' ? 'Show PDF' : 'Show Chart';
+    }
+
+    function applyViewDisplay(item, options = {}) {
+      if (!item) return;
+      const hasChart = !!item.has_chart;
+      const hasPdf = !!item.has_pdf;
+
+      console.info('[LiveMode] Applying view', { song_id: item.song_id, hasChart, hasPdf, viewMode: currentViewMode, options });
+      updateViewToggle(item);
+
+      if (hasChart) {
+        if (chartTitle) {
+          const titlePieces = [];
+          if (item.song_title) titlePieces.push(item.song_title);
+          if (item.song_artist) titlePieces.push(item.song_artist);
+          chartTitle.textContent = titlePieces.join(' — ');
+        }
+        renderChart(item);
+      }
+
+      if (currentViewMode === 'chart' && hasChart) {
+        if (chartWrapper) chartWrapper.style.display = 'flex';
+        if (chartTools) chartTools.style.display = 'flex';
+        hidePdfViewer();
+        noPdfEl.style.display = 'none';
+        noPdfEl.innerHTML = '';
+      } else if (currentViewMode === 'pdf' && hasPdf) {
+        if (chartWrapper) chartWrapper.style.display = 'none';
+        if (chartTools) chartTools.style.display = hasChart ? 'none' : 'none';
+        loadPdfDocument(item, options.reload !== false);
+      } else if (hasChart) {
+        currentViewMode = 'chart';
+        applyViewDisplay(item, options);
+        return;
+      } else if (hasPdf) {
+        currentViewMode = 'pdf';
+        applyViewDisplay(item, options);
+        return;
+      } else {
+        hidePdfViewer();
+        if (chartWrapper) chartWrapper.style.display = 'none';
+        if (chartTools) chartTools.style.display = 'none';
+        noPdfEl.innerHTML = '<p>No chart or PDF available.</p>';
+        noPdfEl.style.display = 'flex';
+      }
+
+      updateChartControls(item);
+      persistChartPrefs();
+    }
+
+    function loadDocument(item){
+      clearViewer();
+      if (!item) return;
+
+      const prefs = loadChartPrefs(item.song_id);
+      currentTranspose = Number.isFinite(prefs.transpose) ? prefs.transpose : 0;
+      currentCapo = Number.isFinite(prefs.capo) ? Math.max(0, Math.min(12, prefs.capo)) : 0;
+      currentHighlightSet = new Set(Array.isArray(prefs.highlights) ? prefs.highlights.map(Number) : []);
+      const desiredView = (prefs.view === 'chart' || prefs.view === 'pdf') ? prefs.view : null;
+      currentViewMode = desiredView || (item.has_chart ? 'chart' : 'pdf');
+      if (currentViewMode === 'chart' && !item.has_chart && item.has_pdf) currentViewMode = 'pdf';
+      if (currentViewMode === 'pdf' && !item.has_pdf && item.has_chart) currentViewMode = 'chart';
+      const savedFontScale = Number.isFinite(prefs.fontScale) ? prefs.fontScale : 1;
+      applyFontScale(savedFontScale, { skipPersist: true });
+
+      console.info('[LiveMode] loadDocument', { song_id: item.song_id, currentViewMode, prefs });
+      applyViewDisplay(item, { reload: true });
+    }
+
+    function changeTranspose(delta) {
+      if (!currentItem || !currentItem.has_chart) return;
+      const next = Math.max(-12, Math.min(12, currentTranspose + delta));
+      if (next === currentTranspose) return;
+      currentTranspose = next;
+      renderChart(currentItem);
+      updateChartControls(currentItem);
+      persistChartPrefs();
+    }
+
+    function changeCapo(delta) {
+      if (!currentItem || !currentItem.has_chart) return;
+      const next = Math.max(0, Math.min(12, currentCapo + delta));
+      if (next === currentCapo) return;
+      currentCapo = next;
+      renderChart(currentItem);
+      updateChartControls(currentItem);
+      persistChartPrefs();
+    }
+
+    function resetChartSettings() {
+      if (!currentItem || !currentItem.has_chart) return;
+      currentTranspose = 0;
+      currentCapo = 0;
+      applyFontScale(1, { skipPersist: true });
+      renderChart(currentItem);
+      updateChartControls(currentItem);
+      persistChartPrefs();
+    }
+
+    if (transposeUpBtn) transposeUpBtn.addEventListener('click', () => changeTranspose(1));
+    if (transposeDownBtn) transposeDownBtn.addEventListener('click', () => changeTranspose(-1));
+    if (capoUpBtn) capoUpBtn.addEventListener('click', () => changeCapo(1));
+    if (capoDownBtn) capoDownBtn.addEventListener('click', () => changeCapo(-1));
+    if (transposeResetBtn) transposeResetBtn.addEventListener('click', resetChartSettings);
+    if (fontUpBtn) fontUpBtn.addEventListener('click', () => changeFontScale(FONT_SCALE_STEP));
+    if (fontDownBtn) fontDownBtn.addEventListener('click', () => changeFontScale(-FONT_SCALE_STEP));
+
+    if (chartLines) {
+      chartLines.addEventListener('click', (event) => {
+        const target = event.target.closest('.chord-char');
+        if (!target || !currentItem || !currentItem.has_chart) return;
+        if (target.classList.contains('no-chord')) return;
+        const chordLabel = target.dataset.chord || '';
+        if (!chordLabel) return;
+        const idx = parseInt(target.dataset.index, 10);
+        if (!Number.isInteger(idx)) return;
+        if (target.classList.contains('highlighted')) {
+          target.classList.remove('highlighted');
+          currentHighlightSet.delete(idx);
+        } else {
+          target.classList.add('highlighted');
+          currentHighlightSet.add(idx);
+        }
+        persistChartPrefs();
+      });
+    }
+
+    if (viewToggleBtn) {
+      viewToggleBtn.addEventListener('click', () => {
+        if (!currentItem) return;
+        const next = currentViewMode === 'chart' ? 'pdf' : 'chart';
+        if (next === 'chart' && !currentItem.has_chart) return;
+        if (next === 'pdf' && !currentItem.has_pdf) return;
+        currentViewMode = next;
+        applyViewDisplay(currentItem, { reload: next === 'pdf' });
+      });
+    }
+
+    function nextPage(){
+      if (!pdfDoc || pageNum >= pageCount) return;
+      pageNum += 1;
+      queueRenderPage(pageNum);
+    }
+    function prevPage(){
+      if (!pdfDoc || pageNum <= 1) return;
+      pageNum -= 1;
+      queueRenderPage(pageNum);
+    }
+
+    const PEDAL_NEXT_KEYS = new Set(['ArrowRight','PageDown',' ','Spacebar','Enter','N','MediaTrackNext']);
+    const PEDAL_PREV_KEYS = new Set(['ArrowLeft','PageUp','Backspace','P','MediaTrackPrevious']);
+    const PEDAL_SCROLL_DOWN_KEYS = new Set(['ArrowDown','PageDown',' ','Spacebar']);
+    const PEDAL_SCROLL_UP_KEYS = new Set(['ArrowUp','PageUp']);
+
+    function handleScroll(direction) {
+      if (!chartWrapper || chartWrapper.style.display === 'none') {
+        if (direction === 1) nextPage();
+        else prevPage();
+        return;
+      }
+      const amount = Math.round(chartWrapper.clientHeight * 0.8);
+      chartWrapper.scrollBy({ top: direction * amount, behavior: 'smooth' });
+    }
+
+    // Keyboard / pedal navigation
+    document.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      const key = e.key || e.code;
+      if (PEDAL_NEXT_KEYS.has(key)) {
+        e.preventDefault();
+        if (chartWrapper && chartWrapper.style.display !== 'none') {
+          const nearBottom = chartWrapper.scrollTop + chartWrapper.clientHeight >= chartWrapper.scrollHeight - 10;
+          if (nearBottom) {
+            nextSong();
+          } else {
+            handleScroll(1);
+          }
+        } else {
+          nextPage();
+        }
+      } else if (PEDAL_PREV_KEYS.has(key)) {
+        e.preventDefault();
+        if (chartWrapper && chartWrapper.style.display !== 'none') {
+          const nearTop = chartWrapper.scrollTop <= 10;
+          if (nearTop) {
+            prevSong();
+          } else {
+            handleScroll(-1);
+          }
+        } else {
+          prevPage();
+        }
+      } else if (PEDAL_SCROLL_DOWN_KEYS.has(key) && chartWrapper && chartWrapper.style.display !== 'none') {
+        e.preventDefault();
+        handleScroll(1);
+      } else if (PEDAL_SCROLL_UP_KEYS.has(key) && chartWrapper && chartWrapper.style.display !== 'none') {
+        e.preventDefault();
+        handleScroll(-1);
+      } else if (key === 'Home') {
+        e.preventDefault();
+        if (chartWrapper && chartWrapper.style.display !== 'none') {
+          chartWrapper.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          pageNum = 1;
+          queueRenderPage(pageNum);
+        }
+      } else if (key === 'End') {
+        e.preventDefault();
+        if (chartWrapper && chartWrapper.style.display !== 'none') {
+          chartWrapper.scrollTo({ top: chartWrapper.scrollHeight, behavior: 'smooth' });
+        } else if (pdfDoc) {
+          pageNum = pageCount;
+          queueRenderPage(pageNum);
+        }
+      } else if ((key === '+' || key === '=') && currentItem && currentItem.has_chart) {
+        e.preventDefault();
+        changeTranspose(1);
+      } else if ((key === '-' || key === '_') && currentItem && currentItem.has_chart) {
+        e.preventDefault();
+        changeTranspose(-1);
+      } else if ((key === '[') && currentItem && currentItem.has_chart) {
+        e.preventDefault();
+        changeCapo(-1);
+      } else if ((key === ']') && currentItem && currentItem.has_chart) {
+        e.preventDefault();
+        changeCapo(1);
+      } else if (key && key.toLowerCase() === 'r' && currentItem && currentItem.has_chart) {
+        e.preventDefault();
+        resetChartSettings();
+      } else if (key === 'Escape' && requestsState.open) {
+        e.preventDefault();
+        closeRequestsDrawer();
+      }
+    });
+
+
+    prevBtn.addEventListener('click', prevSong);
+    nextBtn.addEventListener('click', nextSong);
+    pagePrevBtn.addEventListener('click', prevPage);
+    pageNextBtn.addEventListener('click', nextPage);
+
+    // Initial index: URL ?i=, else last saved, else 0
+    (function init(){
+      setupRequestsUI();
+      initSidebarCollapse();
+      let urlIndex = null;
+      try {
+        const params = new URL(window.location.href).searchParams;
+        if (params.has('i')) {
+          const parsed = parseInt(params.get('i'), 10);
+          if (!Number.isNaN(parsed)) {
+            urlIndex = Math.max(0, parsed);
+          }
+        }
+      } catch (err) {
+        console.warn('[LiveMode] Failed to parse initial index from URL', err);
+      }
+      const start = (urlIndex !== null) ? urlIndex : (loadIndex() ?? 0);
+      renderList(start);
+      show(start);
+    })();
+  </script>
+  <script>
+(function(){
+  const root = document.getElementById('liveRoot');
+  const btn = document.getElementById('themeToggle');
+  if (!root || !btn) return;
+  let theme = localStorage.getItem('liveTheme') || 'light';
+  root.setAttribute('data-theme', theme);
+  btn.addEventListener('click', () => {
+    theme = (theme === 'dark') ? 'light' : 'dark';
+    root.setAttribute('data-theme', theme);
+    localStorage.setItem('liveTheme', theme);
+  });
+})();
+</script>
+</body>
+</html>
