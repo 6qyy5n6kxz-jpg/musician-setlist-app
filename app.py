@@ -315,39 +315,6 @@ def undo_order_route(setlist_id):
 
 
 def _ensure_schema_columns() -> None:
-    pass
-    # setlist table retrofits
-    table_names = [row[0] for row in db.session.execute(text("SELECT name FROM sqlite_master WHERE type='table';")).fetchall()]
-    if "setlist" in table_names:
-        info3 = db.session.execute(text("PRAGMA table_info(setlist);")).fetchall()
-        cols3 = [row[1] for row in info3]
-        if "no_repeat_artists" not in cols3:
-            db.session.execute(text("ALTER TABLE setlist ADD COLUMN no_repeat_artists BOOLEAN DEFAULT 0"))
-            db.session.commit()
-        if "share_token" not in cols3:
-            db.session.execute(text("ALTER TABLE setlist ADD COLUMN share_token VARCHAR(64)"))
-            db.session.commit()
-        if "reset_numbering_per_section" not in cols3:
-            db.session.execute(text("ALTER TABLE setlist ADD COLUMN reset_numbering_per_section BOOLEAN DEFAULT 0"))
-            db.session.commit()
-        if "user_id" not in cols3:
-            db.session.execute(text("ALTER TABLE setlist ADD COLUMN user_id INTEGER"))
-            db.session.commit()
-    # Ensure columns exist in setlist table before altering
-    info3 = db.session.execute(text("PRAGMA table_info(setlist);")).fetchall()
-    cols3 = [row[1] for row in info3]
-    if "no_repeat_artists" not in cols3:
-        db.session.execute(text("ALTER TABLE setlist ADD COLUMN no_repeat_artists BOOLEAN DEFAULT 0"))
-        db.session.commit()
-    if "share_token" not in cols3:
-        db.session.execute(text("ALTER TABLE setlist ADD COLUMN share_token VARCHAR(64)"))
-        db.session.commit()
-    if "reset_numbering_per_section" not in cols3:
-        db.session.execute(text("ALTER TABLE setlist ADD COLUMN reset_numbering_per_section BOOLEAN DEFAULT 0"))
-        db.session.commit()
-    if "user_id" not in cols3:
-        db.session.execute(text("ALTER TABLE setlist ADD COLUMN user_id INTEGER"))
-        db.session.commit()
     """Backfill columns when running against older SQLite databases."""
     with app.app_context():
         bind = db.session.get_bind()
@@ -378,14 +345,14 @@ def _ensure_schema_columns() -> None:
             if "user_id" not in song_cols:
                 db.session.execute(text("ALTER TABLE song ADD COLUMN user_id INTEGER"))
                 db.session.commit()
-        if "is_public" not in song_cols:
-            db.session.execute(text("ALTER TABLE song ADD COLUMN is_public BOOLEAN DEFAULT 1"))
-            db.session.commit()
-            db.session.execute(text("UPDATE song SET is_public = 1 WHERE is_public IS NULL"))
-            db.session.commit()
-        if "deleted_at" not in song_cols:
-            db.session.execute(text("ALTER TABLE song ADD COLUMN deleted_at DATETIME"))
-            db.session.commit()
+            if "is_public" not in song_cols:
+                db.session.execute(text("ALTER TABLE song ADD COLUMN is_public BOOLEAN DEFAULT 1"))
+                db.session.commit()
+                db.session.execute(text("UPDATE song SET is_public = 1 WHERE is_public IS NULL"))
+                db.session.commit()
+            if "deleted_at" not in song_cols:
+                db.session.execute(text("ALTER TABLE song ADD COLUMN deleted_at DATETIME"))
+                db.session.commit()
 
         sls_table = "setlist_song"
 
