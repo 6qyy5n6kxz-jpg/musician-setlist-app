@@ -1631,7 +1631,7 @@ CHORD_CHART_SCRIPT = r"""
   const convertBtn = document.getElementById('chordChartConvertBtn');
   if (!textarea || !convertBtn) return;
 
-  const sectionRegex = /^(?:\s*)((?:pre[\s-]?chorus|verse|chorus|bridge|intro|outro|tag|solo|vamp|ending|coda)(?:[\s:-]*\d+|\s*[A-Za-z]*)?)[\s:.!-]*$/i;
+  const sectionRegex = /^(?:\s*)((?:pre[\s-]?chorus|verse|chorus|bridge|intro|outro|tag|solo|vamp|ending|coda|interlude)(?:[\s:-]*\d+|\s*[A-Za-z]*)?)[\s:.!-]*$/i;
 
   function normalizeLineEndings(text) {
     return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -1647,18 +1647,27 @@ CHORD_CHART_SCRIPT = r"""
     if (!rawToken) return false;
     const token = rawToken.replace(/[\u266d\u266f]/g, match => match === '\u266d' ? 'b' : '#');
     if (token.includes('[') || token.includes(']')) return false;
-    if (/^[|:.,]+$/.test(token)) return false;
+    if (/^[|:.,\-]+$/.test(token)) return false;
     if (/^N\.?C\.?$/i.test(token)) return true;
-    const match = token.match(/^([A-Ga-g][#b]?)(.*)$/);
-    if (!match) return false;
+    
+    const chordMatch = token.match(/^([A-Ga-g][#b]?)(.*)$/);
+    if (!chordMatch) return false;
 
-    const rest = match[2] || '';
-    if (!rest) return true;
-    if (!/^[0-9A-Za-z+#\/()\-b♭♯.]*$/.test(rest)) return false;
-    // Avoid matching simple words like "Am" or "Do" followed by lowercase vowel
-    if (token.length === 2 && token[0] === token[0].toUpperCase() && token[1] === token[1].toLowerCase() && !/[#b]/.test(token[1])) {
+    const root = chordMatch[1];
+    const suffix = chordMatch[2] || '';
+    
+    // Allow empty suffix (bare note like "C", "Dm")
+    if (!suffix) return true;
+    
+    // Check if suffix contains only valid chord characters
+    const validSuffix = /^(add|sus|maj|min|aug|dim|m|M|b|#|\/|\(|\)|0-9|7|9|11|13|\+|-|°|ø)*$/.test(suffix);
+    if (!validSuffix) return false;
+    
+    // Reject ambiguous 2-letter words (like "Do", "Re", "Am" when standing alone as likely lyrics)
+    if (token.length === 2 && token === token[0].toUpperCase() + token[1].toLowerCase() && !/[#b]/.test(root)) {
       return false;
     }
+    
     return true;
   }
 
@@ -1747,7 +1756,7 @@ CHORD_CHART_SCRIPT = r"""
   }
 
   function autoFormatChart(text) {
-    const lines = normalizeLineEndings(text).split(/\\r?\\n/);
+    const lines = normalizeLineEndings(text).split(/\n/);
     const output = [];
     for (let i = 0; i < lines.length; i += 1) {
       const line = lines[i];
