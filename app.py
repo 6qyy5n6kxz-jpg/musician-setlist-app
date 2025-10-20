@@ -29,7 +29,7 @@ def parse_duration(duration_str):
         raise ValueError("Invalid duration format")
 
 try:
-    from PyPDF2 import PdfReader, PdfWriter
+    from pypdf import PdfReader, PdfWriter
 except ImportError:
     PdfReader = None
     PdfWriter = None
@@ -4714,7 +4714,7 @@ class NumberedCanvas(_rl_canvas.Canvas):
             self.drawString(self._margin, y, self._footer_left)
         self.drawRightString(self._page_width - self._margin, y, f"Page {self.getPageNumber()} of {total_pages}")
 
-from PyPDF2 import PdfReader, PdfWriter
+from pypdf import PdfReader, PdfWriter
 @app.get("/setlists/<int:setlist_id>/export.pdf")
 def export_setlist_pdf(setlist_id):
     sl = Setlist.query.get_or_404(setlist_id)
