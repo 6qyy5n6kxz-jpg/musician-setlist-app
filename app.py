@@ -366,8 +366,8 @@ def _ensure_schema_columns() -> None:
             if "duration_override_sec" not in song_cols:
                 db.session.execute(text("ALTER TABLE song ADD COLUMN duration_override_sec INTEGER"))
                 db.session.commit()
-            if "default_attachment_id" not in song_cols:
-                db.session.execute(text("ALTER TABLE song ADD COLUMN default_attachment_id INTEGER"))
+            if "default_file_id" not in song_cols:
+                db.session.execute(text("ALTER TABLE song ADD COLUMN default_file_id INTEGER"))
                 db.session.commit()
             if "release_year" not in song_cols:
                 db.session.execute(text("ALTER TABLE song ADD COLUMN release_year INTEGER"))
@@ -398,11 +398,11 @@ def _ensure_schema_columns() -> None:
             if "section_name" not in cols2:
                 db.session.execute(text(f"ALTER TABLE {sls_table} ADD COLUMN section_name VARCHAR(100)"))
                 db.session.commit()
-            if "preferred_attachment_id" not in cols2:
-                db.session.execute(text(f"ALTER TABLE {sls_table} ADD COLUMN preferred_attachment_id INTEGER"))
+            if "preferred_file_id" not in cols2:
+                db.session.execute(text(f"ALTER TABLE {sls_table} ADD COLUMN preferred_file_id INTEGER"))
                 db.session.execute(text(
-                    "CREATE INDEX IF NOT EXISTS ix_setlist_song_preferred_attachment_id "
-                    "ON setlist_song(preferred_attachment_id)"
+                    "CREATE INDEX IF NOT EXISTS ix_setlist_song_preferred_file_id "
+                    "ON setlist_song(preferred_file_id)"
                 ))
                 db.session.commit()
             if "locked" not in cols2:
@@ -492,7 +492,7 @@ def _ensure_schema_columns_postgres() -> None:
             db.session.commit()
 
         exec_sql("ALTER TABLE song ADD COLUMN IF NOT EXISTS duration_override_sec INTEGER")
-        exec_sql("ALTER TABLE song ADD COLUMN IF NOT EXISTS default_attachment_id INTEGER")
+        exec_sql("ALTER TABLE song ADD COLUMN IF NOT EXISTS default_file_id INTEGER")
         exec_sql("ALTER TABLE song ADD COLUMN IF NOT EXISTS release_year INTEGER")
         exec_sql("ALTER TABLE song ADD COLUMN IF NOT EXISTS chord_chart TEXT")
         exec_sql("ALTER TABLE song ADD COLUMN IF NOT EXISTS user_id INTEGER")
@@ -502,8 +502,8 @@ def _ensure_schema_columns_postgres() -> None:
 
         exec_sql("ALTER TABLE setlist_song ADD COLUMN IF NOT EXISTS notes VARCHAR(500)")
         exec_sql("ALTER TABLE setlist_song ADD COLUMN IF NOT EXISTS section_name VARCHAR(100)")
-        exec_sql("ALTER TABLE setlist_song ADD COLUMN IF NOT EXISTS preferred_attachment_id INTEGER")
-        exec_sql("CREATE INDEX IF NOT EXISTS ix_setlist_song_preferred_attachment_id ON setlist_song(preferred_attachment_id)")
+        exec_sql("ALTER TABLE setlist_song ADD COLUMN IF NOT EXISTS preferred_file_id INTEGER")
+        exec_sql("CREATE INDEX IF NOT EXISTS ix_setlist_song_preferred_file_id ON setlist_song(preferred_file_id)")
         exec_sql("ALTER TABLE setlist_song ADD COLUMN IF NOT EXISTS locked BOOLEAN DEFAULT FALSE")
 
         exec_sql("ALTER TABLE setlist ADD COLUMN IF NOT EXISTS no_repeat_artists BOOLEAN DEFAULT FALSE")
@@ -1961,7 +1961,7 @@ def delete_attachment(att_id):
     if getattr(sf.song, "default_file_id", None) == sf.id:
         sf.song.default_file_id = None
     SetlistSong.query.filter_by(preferred_file_id=sf.id).update(
-        {"preferred_attachment_id": None}
+        {"preferred_file_id": None}
     )
 
     try:
