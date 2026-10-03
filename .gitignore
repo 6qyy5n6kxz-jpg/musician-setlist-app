@@ -1,1 +1,13 @@
 .env
+
+# Python
+__pycache__/
+*.pyc
+
+# Local data (never commit databases or uploads)
+*.db
+instance/
+
+# macOS / ExFAT metadata
+.DS_Store
+._*

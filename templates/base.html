@@ -19,6 +19,7 @@
     <div class="nav-right">
       {% if current_user.is_authenticated %}
         <span class="greeting">Hi, {{ current_user.username }}</span>
+        <button type="button" onclick="location.href='{{ url_for('auth.reset_password') }}'">Change Password</button>
         <button type="button" onclick="location.href='{{ url_for('auth.logout') }}'">Logout</button>
       {% else %}
         <span class="greeting">Hi, there</span>

@@ -59,7 +59,8 @@ from flask_login import (
 from flask_sqlalchemy import SQLAlchemy
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
-from markupsafe import Markup
+from markupsafe import Markup, escape
+from jinja2.utils import htmlsafe_json_dumps
 from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
 from sqlalchemy import text, or_, inspect, func
@@ -86,7 +87,23 @@ REQUEST_STATUS_CHOICES = ["new", "queued", "done", "declined"]
 
 app = Flask(__name__)
 
-app.config["SECRET_KEY"] = FLASK_SECRET_KEY
+_IS_PRODUCTION = (os.getenv("DATABASE_URL") or "").startswith(("postgres://", "postgresql"))
+
+_secret = os.environ.get("FLASK_SECRET_KEY")
+if not _secret:
+    if _IS_PRODUCTION:
+        # Never run production on a guessable key: anyone could forge a login session with it.
+        print("WARNING: FLASK_SECRET_KEY is not set; using a random key (users will be logged out on restart).")
+        _secret = secrets.token_hex(32)
+    else:
+        _secret = "dev-secret"
+app.config["SECRET_KEY"] = _secret
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = _IS_PRODUCTION
+app.config["REMEMBER_COOKIE_HTTPONLY"] = True
+app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
+app.config["REMEMBER_COOKIE_SECURE"] = _IS_PRODUCTION
 
 UPLOAD_DIR = Path(app.instance_path) / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -101,7 +118,7 @@ models.UPLOAD_DIR = UPLOAD_DIR
 from models import db, User, Song, SongFile, Setlist, SetlistSong, PatronRequest
 
 login_manager = LoginManager(app)
-login_manager.login_view = "login"
+login_manager.login_view = "auth.login"
 login_manager.login_message_category = "info"
 
 @login_manager.user_loader
@@ -140,7 +157,6 @@ def parse_mmss_to_seconds(text):
     except Exception:
         return None
 
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret")
 app.url_map.strict_slashes = False
 
 def _assign_section_label(rows, idx, name):
@@ -242,6 +258,92 @@ def _song_or_404(song_id: int, *, include_deleted: bool = False) -> "Song":
     if song.deleted_at and not include_deleted:
         abort(404)
     return song
+
+
+def _visible_song_filter():
+    """SQL filter for songs the current user may read: their own, public, or shared-library songs."""
+    clauses = [Song.is_public.is_(True), Song.user_id.is_(None)]
+    uid = _current_user_id()
+    if uid is not None:
+        clauses.append(Song.user_id == uid)
+    return or_(*clauses)
+
+
+def _song_visible(song: "Song") -> bool:
+    return song.is_public or song.user_id is None or _song_editable(song)
+
+
+def _editable_song_filter():
+    """SQL filter for songs the current user may modify."""
+    if _is_admin():
+        return or_(Song.user_id == _current_user_id(), Song.user_id.is_(None))
+    return Song.user_id == _current_user_id()
+
+
+def _owned_setlist_filter():
+    """SQL filter for setlists the current user owns (admins also manage unowned legacy setlists)."""
+    if _is_admin():
+        return or_(Setlist.user_id == _current_user_id(), Setlist.user_id.is_(None))
+    return Setlist.user_id == _current_user_id()
+
+
+def _safe_redirect_target(target: str | None, fallback: str) -> str:
+    """Only allow same-site relative redirects (blocks open redirects like //evil.com)."""
+    if target and target.startswith("/") and not target.startswith("//") and "\\" not in target:
+        return target
+    return fallback
+
+
+# --- Access control: every route requires login unless listed here ---
+PUBLIC_ENDPOINTS = {
+    "static",
+    "home",
+    "healthz",
+    "view_setlist_by_token",   # audience share page (token-gated)
+    "submit_request_token",    # audience song requests (token-gated)
+    "songs_template_csv",
+    "auth.login",
+    "auth.register",
+}
+
+# song_id routes that non-owners may use on songs they can see
+SONG_READ_ENDPOINTS = {"songs_clone_to_user"}
+
+
+@app.before_request
+def _enforce_access():
+    endpoint = request.endpoint
+    if endpoint is None or endpoint in PUBLIC_ENDPOINTS:
+        return None
+    if not current_user.is_authenticated:
+        return login_manager.unauthorized()
+
+    args = request.view_args or {}
+    if "setlist_id" in args:
+        # song_id on setlist routes refers to a row in this setlist, so the setlist check covers it
+        _require_setlist_owner(Setlist.query.get_or_404(args["setlist_id"]))
+    elif "request_id" in args:
+        req = PatronRequest.query.get_or_404(args["request_id"])
+        if req.setlist is None:
+            if not _is_admin():
+                abort(403)
+        else:
+            _require_setlist_owner(req.setlist)
+    elif "att_id" in args or "file_id" in args:
+        sf = SongFile.query.get_or_404(args.get("att_id") or args.get("file_id"))
+        if endpoint in ("view_attachment", "download_attachment"):
+            if not _song_visible(sf.song):
+                abort(404)
+        else:
+            _require_song_owner(sf.song)
+    elif "song_id" in args:
+        song = Song.query.get_or_404(args["song_id"])
+        if endpoint in SONG_READ_ENDPOINTS:
+            if not _song_visible(song):
+                abort(404)
+        else:
+            _require_song_owner(song)
+    return None
 
 def serialize_patron_request(req: "PatronRequest") -> dict:
     """Return a compact dict for JSON responses and Live Mode drawer."""
@@ -2198,7 +2300,7 @@ def delete_song(song_id: int):
     if q:
         undo_params["q"] = q
     undo_url = url_for("restore_song", **undo_params)
-    message = Markup(f'Deleted “{song.title}” — {song.artist}. <a href="{undo_url}">Undo</a>')
+    message = Markup('Deleted “{}” — {}. <a href="{}">Undo</a>').format(song.title, song.artist, undo_url)
     flash(message, "info")
     try:
         if scope:
@@ -2251,7 +2353,7 @@ def clone_song_to_user(song_id: int):
     song = _song_or_404(song_id)
     if song.user_id == current_user.id:
         flash("Song is already in your library.", "info")
-        return redirect(request.form.get("next") or request.referrer or url_for("edit_song", song_id=song.id))
+        return redirect(_safe_redirect_target(request.form.get("next"), url_for("edit_song", song_id=song.id)))
 
     normalized_title = (song.title or "").strip().lower()
     normalized_artist = (song.artist or "").strip().lower()
@@ -2321,8 +2423,7 @@ def clone_song_to_user(song_id: int):
         except Exception:
             row = None
         if row and row.song_id == song.id and row.setlist:
-            owner_id = getattr(row.setlist, "user_id", None)
-            if owner_id is None or owner_id == current_user.id:
+            if _setlist_editable(row.setlist):
                 row.song_id = destination.id
                 swapped = True
 
@@ -2342,8 +2443,7 @@ def clone_song_to_user(song_id: int):
             flash(f'“{destination.title}” was already in your songs — details refreshed.', "info")
         else:
             flash(f'“{destination.title}” is already in your songs.', "info")
-    next_url = request.form.get("next") or request.referrer or url_for("edit_song", song_id=destination.id)
-    return redirect(next_url)
+    return redirect(_safe_redirect_target(request.form.get("next"), url_for("edit_song", song_id=destination.id)))
 
 @app.post("/songs/<int:song_id>/ai")
 def ai_enrich_song(song_id):
@@ -2496,7 +2596,7 @@ def songs_import_post():
 
             # Upsert by (title, artist)
             existing = (Song.query
-                        .filter_by(title=title, artist=artist)
+                        .filter_by(title=title, artist=artist, user_id=current_user.id)
                         .filter(Song.deleted_at.is_(None))
                         .first())
             if existing:
@@ -2523,6 +2623,7 @@ def songs_import_post():
                     tags=tags,
                     release_year=release_year,
                     duration_override_sec=duration_override_sec,
+                    user_id=current_user.id,
                 )
                 db.session.add(s)
                 created += 1
@@ -2537,7 +2638,7 @@ def songs_import_post():
         # Pretty result page (now rendered inside BASE_HTML so toasts work)
     notes = ""
     if errors:
-        notes = "<h3>Notes</h3><ul>" + "".join(f"<li>{e}</li>" for e in errors[:200]) + "</ul>"
+        notes = "<h3>Notes</h3><ul>" + "".join(f"<li>{escape(e)}</li>" for e in errors[:200]) + "</ul>"
         if len(errors) > 200:
             notes += f"<p>…and {len(errors)-200} more.</p>"
 
@@ -2586,7 +2687,7 @@ def songs_template_csv():
 def export_songs_csv():
     # optional search filter, same as list_songs()
     q = request.args.get("q", "").strip()
-    query = Song.query
+    query = Song.query.filter(_visible_song_filter(), Song.deleted_at.is_(None))
     if q:
         like = f"%{q}%"
         query = query.filter(
@@ -2626,7 +2727,7 @@ def autofill_all_songs():
     # respect the same search filter as /songs
     q = request.args.get("q", "").strip()
 
-    query = Song.query
+    query = Song.query.filter(_editable_song_filter(), Song.deleted_at.is_(None))
     if q:
         like = f"%{q}%"
         query = query.filter(
@@ -2770,6 +2871,7 @@ def duplicate_setlist_newshow(setlist_id):
         target_minutes=orig.target_minutes,
         notes=orig.notes,
         reset_numbering_per_section=orig.reset_numbering_per_section,
+        user_id=_current_user_id(),
     )
     db.session.add(new)
     db.session.flush()
@@ -2807,7 +2909,7 @@ def update_setlist(setlist_id):
 @app.route("/setlists")
 @login_required
 def list_setlists():
-    setlists = Setlist.query.order_by(Setlist.created_at.desc()).all()
+    setlists = Setlist.query.filter(_owned_setlist_filter()).order_by(Setlist.created_at.desc()).all()
 
     def live_mode_url(setlist_id: int) -> str:
         try:
@@ -2896,6 +2998,7 @@ def create_setlist():
         event_type=event_type,
         venue_type=venue_type,
         notes=notes,
+        user_id=_current_user_id(),
     )
     sl.no_repeat_artists = False
     db.session.add(sl)
@@ -3032,6 +3135,7 @@ def setlist_requests_qr(setlist_id):
     sl = Setlist.query.get_or_404(setlist_id)
     token = get_or_create_share_token(sl)
     share_url = url_for("view_setlist_by_token", token=token, _external=True)
+    import qrcode
     img = qrcode.make(share_url)
     buf = BytesIO()
     img.save(buf, format="PNG")
@@ -3142,7 +3246,7 @@ def edit_setlist(setlist_id):
 
     # search pool for the “Add songs” section
     q = request.args.get("q", "").strip()
-    query = Song.query
+    query = Song.query.filter(_visible_song_filter(), Song.deleted_at.is_(None))
     if q:
         like = f"%{q}%"
         query = query.filter(
@@ -3311,7 +3415,7 @@ def add_songs_to_setlist(setlist_id):
             continue
 
         song = Song.query.get(sid)
-        if not song or song.deleted_at:
+        if not song or song.deleted_at or not _song_visible(song):
             skipped_missing += 1
             continue
 
@@ -4064,7 +4168,7 @@ def live_mode(setlist_id):
                     "has_pdf": False,
                 })
 
-    items_json = json.dumps(pages)
+    items_json = htmlsafe_json_dumps(pages)
     toggle_url = url_for("live_mode", setlist_id=sl.id, i=i, skip_no_pdf=(0 if skip_no_pdf else 1))
     toggle_label = "Show all songs" if skip_no_pdf else "Skip songs without PDFs"
 
@@ -4089,6 +4193,7 @@ def duplicate_setlist(setlist_id):
         target_minutes=orig.target_minutes,
         notes=orig.notes,
         reset_numbering_per_section=orig.reset_numbering_per_section,
+        user_id=_current_user_id(),
     )
     db.session.add(new)
     db.session.flush()
@@ -5020,6 +5125,49 @@ def export_setlist_pdf(setlist_id):
     resp = Response(final_bytes, mimetype="application/pdf")
     resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return resp
+
+# --- Admin CLI (run on the server, e.g. Render shell): flask --app app <command> ---
+import click
+
+
+def _user_or_exit(username: str) -> "User":
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        raise click.ClickException(f"No user named {username!r}.")
+    return user
+
+
+@app.cli.command("set-password")
+@click.argument("username")
+@click.password_option()
+def cli_set_password(username, password):
+    """Reset a user's password (for forgotten passwords)."""
+    user = _user_or_exit(username)
+    user.set_password(password)
+    db.session.commit()
+    click.echo(f"Password updated for {username}.")
+
+
+@app.cli.command("make-admin")
+@click.argument("username")
+@click.option("--revoke", is_flag=True, help="Remove admin instead of granting it.")
+def cli_make_admin(username, revoke):
+    """Grant (or revoke) admin. Admins can edit the shared song library and unowned setlists."""
+    user = _user_or_exit(username)
+    user.is_admin = not revoke
+    db.session.commit()
+    click.echo(f"{username} is_admin={user.is_admin}.")
+
+
+@app.cli.command("claim-orphans")
+@click.argument("username")
+def cli_claim_orphans(username):
+    """Assign setlists that have no owner (created before ownership existed) to USERNAME."""
+    user = _user_or_exit(username)
+    count = Setlist.query.filter(Setlist.user_id.is_(None)).update({"user_id": user.id})
+    db.session.commit()
+    click.echo(f"Assigned {count} unowned setlist(s) to {username}.")
+
 
 def ensure_schema():
     """Add any missing columns/indexes used by this app, idempotently."""
