@@ -6,6 +6,8 @@
   <title>Setlist Genie</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <script src="{{ url_for('static', filename='csrf.js') }}"></script>
 </head>
 <body>
   <nav>

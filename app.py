@@ -57,6 +57,7 @@ from flask_login import (
     logout_user,
 )
 from flask_sqlalchemy import SQLAlchemy
+from flask_wtf.csrf import CSRFError, CSRFProtect
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from markupsafe import Markup, escape
@@ -104,6 +105,11 @@ app.config["SESSION_COOKIE_SECURE"] = _IS_PRODUCTION
 app.config["REMEMBER_COOKIE_HTTPONLY"] = True
 app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
 app.config["REMEMBER_COOKIE_SECURE"] = _IS_PRODUCTION
+
+# CSRF: every POST needs a token (added to forms/fetch by static/csrf.js).
+# No time limit, so a Live Mode page left open through a long gig keeps working.
+app.config["WTF_CSRF_TIME_LIMIT"] = None
+csrf = CSRFProtect(app)
 
 UPLOAD_DIR = Path(app.instance_path) / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -292,6 +298,17 @@ def _safe_redirect_target(target: str | None, fallback: str) -> str:
     if target and target.startswith("/") and not target.startswith("//") and "\\" not in target:
         return target
     return fallback
+
+
+@app.errorhandler(CSRFError)
+def _handle_csrf_error(e):
+    msg = "Your session expired or the form was stale. Please try again."
+    if wants_json_response():
+        return jsonify({"ok": False, "error": msg}), 400
+    flash(msg, "warning")
+    referrer = request.referrer or ""
+    back = "/" + referrer[len(request.host_url):] if referrer.startswith(request.host_url) else None
+    return redirect(_safe_redirect_target(back, url_for("home")))
 
 
 # --- Access control: every route requires login unless listed here ---
