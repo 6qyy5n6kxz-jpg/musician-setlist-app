@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { IconBack, IconDrag, IconPlay, IconPlus, IconSearch, IconTrash } from "../components/Icons";
 import { blankItem, db, patchRow, positionBetween, saveRow, softDelete, type Setlist, type SetlistItem, type Song } from "../lib/db";
-import { useSetlistItems, useSetlists, useSongs } from "../lib/hooks";
+import { useProfile, useSetlistItems, useSetlists, useSongs } from "../lib/hooks";
 import { ALL_KEYS } from "../lib/music/chords";
 import { estimateDuration, formatDuration } from "../lib/stage";
 
@@ -16,6 +16,7 @@ export function SetlistEditor() {
   const setlist = setlists?.find((s) => s.id === id);
   const items = useSetlistItems(id);
   const songs = useSongs();
+  const profile = useProfile();
   const songMap = useMemo(() => new Map((songs ?? []).map((s) => [s.id, s])), [songs]);
   const [meta, setMeta] = useState<Setlist | null>(null);
   const [q, setQ] = useState("");
@@ -88,6 +89,12 @@ export function SetlistEditor() {
       <div className="meta-grid" style={{ marginBottom: 14 }}>
         <label className="field"><span>Date</span>
           <input className="input" type="date" value={meta.event_date ?? ""} onChange={(e) => saveMeta({ event_date: e.target.value || null })} />
+        </label>
+        <label className="field"><span>Act</span>
+          <select className="select" value={meta.act_id ?? ""} onChange={(e) => saveMeta({ act_id: e.target.value || null })}>
+            <option value="">—</option>
+            {(profile?.acts ?? []).map((a) => <option key={a.id} value={a.id}>{a.name || "Untitled act"}</option>)}
+          </select>
         </label>
         <label className="field"><span>Venue</span>
           <input className="input" value={meta.venue ?? ""} onChange={(e) => saveMeta({ venue: e.target.value || null })} />

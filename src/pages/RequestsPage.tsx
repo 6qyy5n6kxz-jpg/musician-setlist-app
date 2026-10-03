@@ -1,6 +1,7 @@
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { ActsEditor, activeAct } from "../components/ActsEditor";
 import { KaraokePanel } from "../components/KaraokePanel";
 import { QrCode } from "../components/QrCode";
 import { saveProfile } from "../lib/db";
@@ -107,11 +108,13 @@ export function RequestsPage() {
             <div className="row">
               <button className="btn small" onClick={async () => { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? "Copied" : "Copy link"}</button>
               <a className="btn small" href={link} target="_blank" rel="noreferrer">Preview</a>
-              <button className="btn small" onClick={() => printQrCard(link, name)}>Print sign</button>
+              <button className="btn small" onClick={() => printQrCard(link, activeAct(profile)?.name || name)}>Print sign</button>
             </div>
           </div>
-          <div className="card stack">
-            <label className="field"><span>Your name on the request page</span>
+          <div className="card"><ActsEditor profile={profile} /></div>
+          <details className="card stack">
+            <summary style={{ cursor: "pointer", fontWeight: 600 }}>Defaults (used when no act is selected)</summary>
+            <label className="field" style={{ marginTop: 10 }}><span>Name on the request page</span>
               <input className="input" value={name} onChange={(e) => setName(e.target.value)} onBlur={() => saveProfile({ display_name: name || null })} placeholder="Devin Frank" />
             </label>
             <label className="field"><span>Message to the audience</span>
@@ -121,7 +124,7 @@ export function RequestsPage() {
               <input className="input" value={tip} onChange={(e) => setTip(e.target.value)} onBlur={() => saveProfile({ tip_url: tip || null })} placeholder="https://venmo.com/u/yourname" />
             </label>
             <p className="small dim">Only songs marked “Show on the audience request page” are listed. People can also type in a song you don't have.</p>
-          </div>
+          </details>
         </div>
       </div>
     </div>

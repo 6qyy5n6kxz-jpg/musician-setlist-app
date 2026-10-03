@@ -36,6 +36,8 @@ export interface LiveState {
   /** Short message for the band screens ("Skip bridge", "Key change!"). */
   message: string | null;
   upNext: { title: string; artist: string } | null;
+  /** Name of the act performing (shown on the display between songs). */
+  act: string | null;
   /** Karaoke: who's singing now, and the next few in line. */
   singer: string | null;
   nextSingers: { name: string; title: string }[];
@@ -43,7 +45,7 @@ export interface LiveState {
 
 export const EMPTY_LIVE: LiveState = {
   v: 1, at: 0, setlist: null, song: null, slides: [], slide: 0, blank: false, message: null, upNext: null,
-  singer: null, nextSingers: [],
+  singer: null, nextSingers: [], act: null,
 };
 
 const channelName = (token: string) => `live-${token}`;

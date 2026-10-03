@@ -53,6 +53,8 @@ export interface SongFile extends SyncFields {
 
 export interface Setlist extends SyncFields {
   name: string;
+  /** Which act this set is for (Profile.acts id). */
+  act_id: string | null;
   event_date: string | null;
   venue: string | null;
   notes: string | null;
@@ -78,9 +80,19 @@ export interface Profile {
   tip_url: string | null;
   live_token: string;
   karaoke_open: boolean;
+  acts: Act[];
+  /** The act currently performing: its name, message and tip link show on the request page. */
+  active_act: string | null;
   settings: Record<string, unknown>;
   updated_at: string;
   dirty: 0 | 1;
+}
+
+export interface Act {
+  id: string;
+  name: string;
+  message: string;
+  tip_url: string;
 }
 
 export interface StoredBlob {
@@ -153,7 +165,7 @@ export function blankSong(partial: Partial<Song> = {}): Song {
 }
 
 export function blankSetlist(partial: Partial<Setlist> = {}): Setlist {
-  return { ...baseRow(), name: "", event_date: null, venue: null, notes: null, ...partial };
+  return { ...baseRow(), name: "", act_id: null, event_date: null, venue: null, notes: null, ...partial };
 }
 
 export function blankItem(partial: Partial<SetlistItem> & { setlist_id: string }): SetlistItem {

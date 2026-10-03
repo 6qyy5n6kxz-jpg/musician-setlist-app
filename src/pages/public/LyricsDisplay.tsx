@@ -53,7 +53,7 @@ export function LyricsDisplay() {
               </>
             ) : (
               <>
-                <h1>{state?.setlist ?? "Live music"}</h1>
+                <h1>{state?.act || state?.setlist || "Live music"}</h1>
                 <p>Lyrics will appear here</p>
               </>
             )}

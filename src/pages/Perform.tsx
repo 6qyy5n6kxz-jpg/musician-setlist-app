@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { IconClose, IconInbox, IconList, IconMic, IconTv } from "../components/Icons";
 import { SongStage, type StageHandle } from "../components/SongStage";
-import { blankItem, db, patchRow, positionBetween, saveRow, type Song } from "../lib/db";
+import { blankItem, db, patchRow, positionBetween, saveProfile, saveRow, type Song } from "../lib/db";
 import { useProfile, useSetlistItems, useSetlists, useSong, useSongs } from "../lib/hooks";
 import { useLivePublisher } from "../lib/live";
 import { guessKey, keyDistance } from "../lib/music/chords";
@@ -127,6 +127,16 @@ export function Perform() {
     }));
     void setStatus(r.id, "queued");
   };
+
+  // ------------------------------------------------------------ act
+  // Starting a set makes its act the one shown on the request page and display.
+  useEffect(() => {
+    if (setlist?.act_id && profile && profile.active_act !== setlist.act_id && profile.acts?.some((a) => a.id === setlist.act_id)) {
+      void saveProfile({ active_act: setlist.act_id });
+    }
+  }, [setlist?.act_id, profile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const actName = profile?.acts?.find((a) => a.id === profile.active_act)?.name ?? profile?.display_name ?? null;
+  useEffect(() => { publish({ act: actName }); }, [actName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ------------------------------------------------------------ karaoke
   const lineup = karaokeLineup(requests).filter((r) => r.id !== singerId);
