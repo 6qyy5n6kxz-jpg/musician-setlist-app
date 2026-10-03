@@ -21,7 +21,7 @@ Requests, the lyrics display and band screens need a connection between devices:
 
 - React + TypeScript + Vite, `vite-plugin-pwa` (Workbox) for offline, Dexie for local storage, PDF.js for charts
 - Supabase: Postgres with row-level security, Realtime (requests + live screens), Storage (PDFs, audio), Auth (single owner account)
-- Hosted on GitHub Pages (`.github/workflows/deploy.yml`); a scheduled workflow pings Supabase so the free project never pauses
+- Hosted on GitHub Pages at https://stage.achangeofplansmusic.com (`.github/workflows/deploy.yml`); a scheduled workflow pings Supabase so the free project never pauses
 
 ## Develop
 
