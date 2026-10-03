@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { IconClose, IconInbox, IconList, IconTv } from "../components/Icons";
+import { IconClose, IconInbox, IconList, IconMic, IconTv } from "../components/Icons";
 import { SongStage, type StageHandle } from "../components/SongStage";
 import { blankItem, db, patchRow, positionBetween, saveRow, type Song } from "../lib/db";
 import { useProfile, useSetlistItems, useSetlists, useSong, useSongs } from "../lib/hooks";
 import { useLivePublisher } from "../lib/live";
 import { guessKey, keyDistance } from "../lib/music/chords";
 import { allChords, lyricSlides, parseChordPro, type Section } from "../lib/music/chordpro";
-import { openQueue, useRequests, type SongRequest } from "../lib/requests";
+import { describeRequest, karaokeLineup, openQueue, useRequests, type SongRequest } from "../lib/requests";
+import { KaraokePanel } from "../components/KaraokePanel";
 import { useSettings } from "../lib/settings";
 import { useSyncStatus } from "../lib/sync";
 import { useWakeLock } from "../lib/stage";
@@ -37,7 +38,8 @@ export function Perform() {
   const song: Song | null | undefined = extra ?? (setlistId ? (item ? songMap.get(item.song_id!) : null) : singleSong);
 
   const [sideOpen, setSideOpen] = useState(() => window.innerWidth > 1000);
-  const [drawer, setDrawer] = useState<"requests" | "live" | null>(null);
+  const [drawer, setDrawer] = useState<"requests" | "live" | "karaoke" | null>(null);
+  const [singerId, setSingerId] = useState<string | null>(null);
   const [slidePos, setSlidePos] = useState(0);
   const [blank, setBlank] = useState(false);
   const [message, setMessage] = useState("");
@@ -126,6 +128,34 @@ export function Perform() {
     void setStatus(r.id, "queued");
   };
 
+  // ------------------------------------------------------------ karaoke
+  const lineup = karaokeLineup(requests).filter((r) => r.id !== singerId);
+  const singer = singerId ? requests.find((r) => r.id === singerId) : undefined;
+  const startSinger = (r: SongRequest) => {
+    if (singerId && singerId !== r.id) void setStatus(singerId, "played");
+    setSingerId(r.id);
+    if (r.status === "new") void setStatus(r.id, "queued");
+    setDrawer(null);
+    const s = r.song_id ? songMap.get(r.song_id) : undefined;
+    if (s) {
+      const at = playable.findIndex((p) => p.song_id === s.id);
+      if (at >= 0) go(at);
+      else setExtra(s);
+    }
+  };
+  const finishSinger = () => {
+    if (singerId) void setStatus(singerId, "played");
+    setSingerId(null);
+    setExtra(null);
+  };
+  const lineupKey = lineup.map((r) => r.id).join(",");
+  useEffect(() => {
+    publish({
+      singer: singer?.patron_name ?? null,
+      nextSingers: lineup.slice(0, 3).map((r) => ({ name: r.patron_name ?? "", title: r.title })),
+    });
+  }, [singer?.patron_name, lineupKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (setlistId && (setlists === undefined || items === undefined || songs === undefined)) return null;
   if (songId && singleSong === undefined) return null;
 
@@ -157,6 +187,11 @@ export function Perform() {
             </button>
             <button className="btn small icon" onClick={() => stepSlide(1)} aria-label="Next lyric section">›</button>
           </div>
+        )}
+        {(profile?.karaoke_open || lineup.length > 0 || singer) && (
+          <button className={`btn small ${singer ? "on" : ""}`} onClick={() => setDrawer(drawer === "karaoke" ? null : "karaoke")} title="Karaoke lineup">
+            <IconMic size={18} /> {singer ? <span className="truncate" style={{ maxWidth: 90 }}>{singer.patron_name}</span> : lineup.length || ""}
+          </button>
         )}
         <button className="btn small" onClick={() => setDrawer(drawer === "requests" ? null : "requests")} style={{ position: "relative" }}>
           <IconInbox size={18} /> {queue.length || ""}
@@ -199,6 +234,7 @@ export function Perform() {
               onCapoChange={item && !extra ? (c) => patchRow(db.setlist_items, item.id, { capo_override: c === song.capo ? null : c }) : undefined}
               onSectionsChange={onSectionsChange}
               onActiveSection={onActiveSection}
+              onTimedSection={setSlidePos}
               onReachEnd={setlistId ? next : undefined}
               onReachStart={setlistId ? prev : undefined}
               activePos={liveEnabled ? slidePos : null}
@@ -221,11 +257,11 @@ export function Perform() {
           {popups.map((t) => (
             <div key={t.id} className="toast">
               <span className="badge">!</span>
-              <div className="grow" onClick={() => { dismissToast(t.id); setDrawer("requests"); }}>
-                <div style={{ fontWeight: 700 }}>{t.title}{t.artist ? ` — ${t.artist}` : ""}</div>
-                <div className="small dim">{t.patron_name ? `from ${t.patron_name}` : "New request"}{t.message ? ` · “${t.message}”` : ""}</div>
+              <div className="grow" onClick={() => { dismissToast(t.id); setDrawer(t.kind === "karaoke" ? "karaoke" : "requests"); }}>
+                <div style={{ fontWeight: 700 }}>{describeRequest(t).title}</div>
+                <div className="small dim">{describeRequest(t).detail}</div>
               </div>
-              <button className="btn small" onClick={() => { void setStatus(t.id, "queued"); dismissToast(t.id); }}>Queue</button>
+              <button className="btn small" onClick={() => { void setStatus(t.id, "queued"); dismissToast(t.id); }}>{t.kind === "karaoke" ? "Approve" : "Queue"}</button>
               <button className="btn small ghost icon" onClick={() => dismissToast(t.id)} aria-label="Dismiss"><IconClose size={18} /></button>
             </div>
           ))}
@@ -264,6 +300,18 @@ export function Perform() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+      {drawer === "karaoke" && (
+        <div className="drawer">
+          <div className="drawer-head">
+            <h2 className="grow" style={{ fontSize: "1.15rem" }}>Karaoke</h2>
+            {singer && <button className="btn small primary" onClick={finishSinger}>Done singing</button>}
+            <button className="btn icon ghost" onClick={() => setDrawer(null)} aria-label="Close"><IconClose /></button>
+          </div>
+          <div className="drawer-body">
+            {userEmail ? <KaraokePanel onStart={startSinger} currentSingerId={singerId} /> : <p className="dim">Sign in (Settings) to run karaoke sign-up.</p>}
           </div>
         </div>
       )}

@@ -27,6 +27,17 @@ export interface Song extends SyncFields {
   notes: string | null;
   flow: string | null;
   requestable: boolean;
+  /** Available on the karaoke sign-up list. */
+  karaoke: boolean;
+  /** Section start times recorded against the song's backing track. */
+  timings: SongTimings | null;
+}
+
+export interface SongTimings {
+  /** The flow string the marks were recorded with (null = sections as written). */
+  flow: string | null;
+  /** Section position (in the arranged list) and the track time it starts at, in seconds. */
+  marks: { pos: number; t: number }[];
 }
 
 export type FileKind = "pdf" | "audio" | "image";
@@ -66,6 +77,7 @@ export interface Profile {
   request_message: string | null;
   tip_url: string | null;
   live_token: string;
+  karaoke_open: boolean;
   settings: Record<string, unknown>;
   updated_at: string;
   dirty: 0 | 1;
@@ -135,7 +147,7 @@ export function blankSong(partial: Partial<Song> = {}): Song {
     ...baseRow(),
     title: "", artist: "", song_key: null, tempo: null, time_signature: null, duration_sec: null,
     capo: 0, tags: [], genre: null, year: null, ccli: null, content: "", notes: null, flow: null,
-    requestable: true,
+    requestable: true, karaoke: false, timings: null,
     ...partial,
   };
 }

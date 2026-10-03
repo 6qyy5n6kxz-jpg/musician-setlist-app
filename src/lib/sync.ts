@@ -151,7 +151,8 @@ async function pushProfile() {
   const { error } = await supabase
     .from("profiles")
     .update({
-      display_name: p.display_name, requests_open: p.requests_open, request_message: p.request_message,
+      display_name: p.display_name, requests_open: p.requests_open, karaoke_open: p.karaoke_open ?? false,
+      request_message: p.request_message,
       tip_url: p.tip_url, settings: p.settings, updated_at: p.updated_at,
     })
     .eq("id", p.id);

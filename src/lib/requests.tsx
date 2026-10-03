@@ -1,5 +1,6 @@
 // Live audience request queue (needs a connection; requests come from patrons' phones).
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { getAudioContext } from "./stage";
 import { supabase } from "./supabase";
 import { useSyncStatus } from "./sync";
 
@@ -13,6 +14,8 @@ export interface SongRequest {
   patron_name: string | null;
   message: string | null;
   status: RequestStatus;
+  kind: "request" | "karaoke";
+  position: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -26,6 +29,8 @@ interface RequestsCtx {
   remove: (id: string) => Promise<void>;
   clearFinished: () => Promise<void>;
   refresh: () => Promise<void>;
+  /** Move a singer up (-1) or down (+1) in the karaoke lineup. */
+  moveSinger: (id: string, dir: -1 | 1) => Promise<void>;
 }
 
 const Ctx = createContext<RequestsCtx | null>(null);
@@ -40,7 +45,7 @@ export function RequestsProvider({ children }: { children: ReactNode }) {
     const since = new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(); // tonight's gig
     const { data } = await supabase
       .from("song_requests")
-      .select("id,song_id,title,artist,patron_name,message,status,created_at,updated_at")
+      .select("id,song_id,title,artist,patron_name,message,status,kind,position,created_at,updated_at")
       .gte("created_at", since)
       .order("created_at", { ascending: true });
     if (data) setRequests(data as SongRequest[]);
@@ -77,6 +82,27 @@ export function RequestsProvider({ children }: { children: ReactNode }) {
     };
   }, [userEmail, refresh]);
 
+  // iPad Safari only plays sound that a tap started. Unlock the chime (and Web Audio for the
+  // metronome) on the first touch or key press, so a request arriving mid-song can chime.
+  useEffect(() => {
+    const unlock = () => {
+      const a = chime.current;
+      if (a) {
+        a.muted = true;
+        void a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false; }).catch(() => { a.muted = false; });
+      }
+      void getAudioContext();
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
   useEffect(() => {
     if (!toasts.length) return;
     const t = setTimeout(() => setToasts((prev) => prev.slice(1)), 9000);
@@ -99,13 +125,28 @@ export function RequestsProvider({ children }: { children: ReactNode }) {
     if (ids.length) await supabase.from("song_requests").delete().in("id", ids);
   }, [requests]);
 
+  const moveSinger = useCallback(async (id: string, dir: -1 | 1) => {
+    const line = karaokeLineup(requests);
+    const i = line.findIndex((r) => r.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= line.length) return;
+    const a = line[i], b = line[j];
+    const pa = b.position ?? Date.parse(b.created_at) / 1000;
+    const pb = a.position ?? Date.parse(a.created_at) / 1000;
+    setRequests((prev) => prev.map((r) => (r.id === a.id ? { ...r, position: pa } : r.id === b.id ? { ...r, position: pb } : r)));
+    await Promise.all([
+      supabase.from("song_requests").update({ position: pa }).eq("id", a.id),
+      supabase.from("song_requests").update({ position: pb }).eq("id", b.id),
+    ]);
+  }, [requests]);
+
   const value = useMemo<RequestsCtx>(() => ({
     requests,
     newCount: requests.filter((r) => r.status === "new").length,
     toasts,
     dismissToast: (id) => setToasts((prev) => prev.filter((t) => t.id !== id)),
-    setStatus, remove, clearFinished, refresh,
-  }), [requests, toasts, setStatus, remove, clearFinished, refresh]);
+    setStatus, remove, clearFinished, refresh, moveSinger,
+  }), [requests, toasts, setStatus, remove, clearFinished, refresh, moveSinger]);
 
   return (
     <Ctx.Provider value={value}>
@@ -122,10 +163,31 @@ export function useRequests(): RequestsCtx {
   return v;
 }
 
-/** Order for the queue: new first (oldest first), then queued. */
+/** Song requests (not karaoke): new first (oldest first), then queued, then finished. */
 export function openQueue(requests: SongRequest[]): SongRequest[] {
   const rank = { new: 0, queued: 1, played: 2, declined: 3 } as const;
-  return [...requests].sort((a, b) => rank[a.status] - rank[b.status] || a.created_at.localeCompare(b.created_at));
+  return requests
+    .filter((r) => (r.kind ?? "request") === "request")
+    .sort((a, b) => rank[a.status] - rank[b.status] || a.created_at.localeCompare(b.created_at));
+}
+
+/** Singers still waiting, in lineup order. */
+export function karaokeLineup(requests: SongRequest[]): SongRequest[] {
+  const pos = (r: SongRequest) => r.position ?? Date.parse(r.created_at) / 1000;
+  return requests
+    .filter((r) => r.kind === "karaoke" && (r.status === "new" || r.status === "queued"))
+    .sort((a, b) => pos(a) - pos(b));
+}
+
+/** Pop-up text for a new request or sign-up. */
+export function describeRequest(r: SongRequest): { title: string; detail: string } {
+  if (r.kind === "karaoke") {
+    return { title: `${r.patron_name ?? "Someone"} signed up to sing`, detail: `${r.title}${r.artist ? ` — ${r.artist}` : ""}` };
+  }
+  return {
+    title: `${r.title}${r.artist ? ` — ${r.artist}` : ""}`,
+    detail: `${r.patron_name ? `from ${r.patron_name}` : "New request"}${r.message ? ` · “${r.message}”` : ""}`,
+  };
 }
 
 // Tiny WAV chime built at load (two sine notes), avoids shipping an audio file.

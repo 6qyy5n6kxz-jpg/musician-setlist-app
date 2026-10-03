@@ -1,11 +1,11 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
-import { db, type Song } from "../lib/db";
+import { db, patchRow, type Song } from "../lib/db";
 import { useSongFiles } from "../lib/hooks";
 import { ALL_KEYS, guessKey, keyDistance, transposeKey } from "../lib/music/chords";
 import { allChords, applyFlow, parseChordPro, type Section } from "../lib/music/chordpro";
 import { updateSettings, useSettings, type PedalAction } from "../lib/settings";
-import { AutoScroller, beatsPerBar, createTapTempo, estimateDuration, formatDuration, Metronome, usePedalActions } from "../lib/stage";
+import { AutoScroller, beatsPerBar, createTapTempo, estimateDuration, formatDuration, Metronome, timedSectionAt, usePedalActions } from "../lib/stage";
 import { ChartView } from "./ChartView";
 import { IconMetronome, IconMusic, IconPause, IconPlay, IconScroll } from "./Icons";
 import { PdfView } from "./PdfView";
@@ -25,6 +25,8 @@ interface Props {
   onActiveSection?: (pos: number, sections: Section[]) => void;
   /** Called whenever the arranged sections change (song change, flow toggle). */
   onSectionsChange?: (sections: Section[], flowUsed: boolean) => void;
+  /** Timed lyrics moved to a new section while the backing track plays. */
+  onTimedSection?: (pos: number) => void;
   onReachEnd?: () => void;
   onReachStart?: () => void;
   pedalHandlers?: Partial<Record<PedalAction, () => void>>;
@@ -39,7 +41,7 @@ interface Props {
 
 export function SongStage(props: Props) {
   const { song, performKey, capoOverride, onPerformKeyChange, onCapoChange, onActiveSection, onReachEnd, onReachStart,
-    pedalHandlers, activePos, handleRef, extraControls, kicker, pedalsEnabled = true, onSectionsChange } = props;
+    pedalHandlers, activePos, handleRef, extraControls, kicker, pedalsEnabled = true, onSectionsChange, onTimedSection } = props;
   const settings = useSettings();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -133,13 +135,31 @@ export function SongStage(props: Props) {
     else { m.onDone = null; m.start(); setMetroOn(true); }
   }, []);
 
+  // ---------------------------------------------------------- timed lyrics
+  // Marks are section start times on the backing track, recorded by tapping along once.
+  const flowKey = flowUsed ? song.flow : null;
+  const timings = song.timings && (song.timings.flow ?? null) === flowKey && song.timings.marks.length ? song.timings : null;
+  const [recording, setRecording] = useState(false);
+  const [draftMarks, setDraftMarks] = useState<{ pos: number; t: number }[]>([]);
+  useEffect(() => { setRecording(false); setDraftMarks([]); }, [song.id]);
+  const mark = useCallback(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    setDraftMarks((m) => (m.length >= sections.length ? m : [...m, { pos: m.length, t: Math.round(a.currentTime * 10) / 10 }]));
+  }, [sections.length]);
+  const saveTimings = useCallback(async (marks: { pos: number; t: number }[]) => {
+    setRecording(false);
+    if (marks.length) await patchRow(db.songs, song.id, { timings: { flow: flowKey, marks } });
+  }, [song.id, flowKey]);
+
   const toggleTrack = useCallback(() => {
     const a = audioRef.current;
     if (!a) return;
     if (!a.paused) { a.pause(); return; }
     const go = () => {
       void a.play();
-      startScroll(Math.max(10, (a.duration || songDuration) - a.currentTime), settings.scrollDelay);
+      // With recorded timings the chart jumps section by section instead of scrolling linearly
+      if (!timings && !recording) startScroll(Math.max(10, (a.duration || songDuration) - a.currentTime), settings.scrollDelay);
     };
     // Count-in clicks before the track starts (only from the top)
     if (settings.countInBars > 0 && a.currentTime < 0.5 && song.tempo) {
@@ -148,7 +168,7 @@ export function SongStage(props: Props) {
       m.start(settings.countInBars);
       setMetroOn(true);
     } else go();
-  }, [startScroll, songDuration, settings.scrollDelay, settings.countInBars, song.tempo]);
+  }, [startScroll, songDuration, settings.scrollDelay, settings.countInBars, song.tempo, timings, recording]);
 
   // ---------------------------------------------------------- paging & sections
   const pageDown = useCallback(() => {
@@ -176,6 +196,18 @@ export function SongStage(props: Props) {
   }, []);
   useImperativeHandle(handleRef, () => ({ scrollToPos, sections }), [scrollToPos, sections]);
 
+  const timedPos = useRef(-1);
+  useEffect(() => { timedPos.current = -1; }, [song.id]);
+  useEffect(() => {
+    if (!timings || recording || !playing) return;
+    const pos = timedSectionAt(timings.marks, trackTime);
+    if (pos >= 0 && pos !== timedPos.current) {
+      timedPos.current = pos;
+      scrollToPos(pos);
+      onTimedSection?.(pos);
+    }
+  }, [trackTime, timings, recording, playing, scrollToPos, onTimedSection]);
+
   const lastActive = useRef(-1);
   useEffect(() => { lastActive.current = -1; }, [song.id, useFlow]);
   const onScroll = useCallback(() => {
@@ -197,6 +229,7 @@ export function SongStage(props: Props) {
     pageDown, pageUp, toggleScroll, toggleMetronome,
     toggleTrack: audio ? toggleTrack : undefined,
     ...pedalHandlers,
+    ...(recording ? { nextSlide: mark } : {}),
   }, pedalsEnabled);
 
   // ---------------------------------------------------------- key / capo controls
@@ -266,12 +299,35 @@ export function SongStage(props: Props) {
             aria-label="Track position"
           />
           <span className="small mono">{formatDuration(Math.floor(trackDur))}</span>
-          <span className="small dim truncate" style={{ maxWidth: 160 }}>{audio?.name}</span>
+          {recording ? (
+            <>
+              <button className="btn small primary" onClick={mark} disabled={!playing || draftMarks.length >= sections.length}>
+                Mark {sections[draftMarks.length]?.label || (draftMarks.length >= sections.length ? "(done)" : `section ${draftMarks.length + 1}`)}
+              </button>
+              <button className="btn small" onClick={() => setDraftMarks((m) => m.slice(0, -1))} disabled={!draftMarks.length}>Undo</button>
+              <button className="btn small" onClick={() => saveTimings(draftMarks)} disabled={!draftMarks.length}>Save ({draftMarks.length}/{sections.length})</button>
+              <button className="btn small ghost" onClick={() => { setRecording(false); setDraftMarks([]); }}>Cancel</button>
+            </>
+          ) : (
+            <>
+              {timings && <span className="chip accent" title="Chart and lyrics display follow the track">timed ✓</span>}
+              <button className="btn small ghost" disabled={!hasChart} title="Tap along once to time the lyrics to this track"
+                onClick={() => {
+                  setDraftMarks([]);
+                  setRecording(true);
+                  scroller.current?.stop();
+                  if (audioRef.current) audioRef.current.currentTime = 0;
+                }}>
+                {timings ? "Re-time" : "Time lyrics"}
+              </button>
+              <span className="small dim truncate" style={{ maxWidth: 140 }}>{audio?.name}</span>
+            </>
+          )}
           <audio
             ref={audioRef} src={audioUrl} preload="auto"
             onPlay={() => setPlaying(true)}
             onPause={() => { setPlaying(false); scroller.current?.stop(); }}
-            onEnded={() => setPlaying(false)}
+            onEnded={() => { setPlaying(false); if (recording) void saveTimings(draftMarks); }}
             onTimeUpdate={(e) => setTrackTime(e.currentTarget.currentTime)}
             onLoadedMetadata={(e) => setTrackDur(e.currentTarget.duration)}
           />

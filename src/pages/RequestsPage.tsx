@@ -1,6 +1,7 @@
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { KaraokePanel } from "../components/KaraokePanel";
 import { QrCode } from "../components/QrCode";
 import { saveProfile } from "../lib/db";
 import { useProfile } from "../lib/hooks";
@@ -99,6 +100,7 @@ export function RequestsPage() {
         </div>
 
         <div className="stack">
+          <div className="card"><KaraokePanel /></div>
           <div className="card stack" style={{ alignItems: "center", textAlign: "center" }}>
             <QrCode value={link} />
             <div className="small dim" style={{ wordBreak: "break-all" }}>{link}</div>

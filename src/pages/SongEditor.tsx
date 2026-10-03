@@ -165,7 +165,10 @@ export function SongEditor() {
           <textarea className="textarea" style={{ minHeight: 60 }} placeholder="Capo 2 · start on the chorus · watch the drummer for the stop at 2:45"
             value={draft.notes ?? ""} onChange={(e) => update({ notes: e.target.value || null })} />
         </label>
-        <label className="check"><input type="checkbox" checked={draft.requestable} onChange={(e) => update({ requestable: e.target.checked })} /> Show on the audience request page</label>
+        <div className="row wrap">
+          <label className="check"><input type="checkbox" checked={draft.requestable} onChange={(e) => update({ requestable: e.target.checked })} /> Show on the audience request page</label>
+          <label className="check"><input type="checkbox" checked={draft.karaoke ?? false} onChange={(e) => update({ karaoke: e.target.checked })} /> Available for karaoke sign-up</label>
+        </div>
       </div>
 
       <div className="editor-grid">

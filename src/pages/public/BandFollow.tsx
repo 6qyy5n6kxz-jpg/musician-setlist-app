@@ -32,7 +32,7 @@ export function BandFollow() {
   const transpose = song?.key && viewKey ? keyDistance(song.key, viewKey) : 0;
 
   return (
-    <div className="song-view" style={{ height: "100vh" }}>
+    <div className="song-view" style={{ height: "100dvh" }}>
       <div className="topbar">
         <span className={`sync-dot ${connected ? "idle" : "offline"}`} title={connected ? "Live" : "Reconnecting"} />
         <div className="grow" style={{ minWidth: 0 }}>

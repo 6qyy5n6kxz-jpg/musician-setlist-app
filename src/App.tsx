@@ -2,7 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { HashRouter, NavLink, Navigate, Outlet, Route, Routes, useNavigate } from "react-router-dom";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { IconGear, IconInbox, IconLibrary, IconSets } from "./components/Icons";
-import { RequestsProvider, useRequests } from "./lib/requests";
+import { describeRequest, RequestsProvider, useRequests } from "./lib/requests";
 import { startSync } from "./lib/sync";
 import { Library } from "./pages/Library";
 import { SongPage } from "./pages/SongPage";
@@ -13,6 +13,8 @@ import { SetlistEditor } from "./pages/SetlistEditor";
 import { Perform } from "./pages/Perform";
 import { RequestsPage } from "./pages/RequestsPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { GigCheck } from "./pages/GigCheck";
+import { TuneUp } from "./pages/TuneUp";
 import { PublicRequest } from "./pages/public/PublicRequest";
 import { LyricsDisplay } from "./pages/public/LyricsDisplay";
 import { BandFollow } from "./pages/public/BandFollow";
@@ -38,6 +40,8 @@ export function App() {
             <Route path="/sets/:id" element={<SetlistEditor />} />
             <Route path="/requests" element={<RequestsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/gigcheck" element={<GigCheck />} />
+            <Route path="/tuneup" element={<TuneUp />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
@@ -96,8 +100,8 @@ function RequestToasts() {
         <div key={t.id} className="toast" onClick={() => { dismissToast(t.id); navigate("/requests"); }}>
           <span className="badge">!</span>
           <div className="grow">
-            <div style={{ fontWeight: 700 }}>{t.title}{t.artist ? ` — ${t.artist}` : ""}</div>
-            <div className="small dim">{t.patron_name ? `from ${t.patron_name}` : "New request"}{t.message ? ` · “${t.message}”` : ""}</div>
+            <div style={{ fontWeight: 700 }}>{describeRequest(t).title}</div>
+            <div className="small dim">{describeRequest(t).detail}</div>
           </div>
         </div>
       ))}

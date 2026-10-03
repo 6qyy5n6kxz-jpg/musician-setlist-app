@@ -305,6 +305,7 @@ h1, h2, h3 { line-height: 1.15; margin: 0; }
   text-align: center; padding: 4vh 5vw; cursor: none; overflow: hidden;
   font-family: var(--font);
 }
+.display .d-singer { font-size: 3vw; font-weight: 800; color: var(--accent, #f5b941); margin-bottom: 1vh; }
 .display .d-title { font-size: 2.2vw; color: #9a9890; margin-bottom: 3vh; letter-spacing: 0.02em; }
 .display .d-lines { font-size: var(--display-size, 5.2vw); font-weight: 700; line-height: 1.22; text-wrap: balance; }
 .display .d-lines div { margin: 0.12em 0; }

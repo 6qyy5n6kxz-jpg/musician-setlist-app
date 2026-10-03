@@ -66,6 +66,11 @@ export function Library() {
       <div className="row" style={{ marginBottom: 14 }}>
         <h1 className="grow">Songs <span className="dim small">{songs ? songs.length : ""}</span></h1>
         <SyncBadge />
+        {songs && songs.some((x) => !x.content.trim()) && (
+          <Link className="btn" to="/tuneup" title="Add charts and fix song details fast">
+            Tune-up <span className="badge" style={{ background: "var(--accent)", color: "var(--accent-ink)" }}>{songs.filter((x) => !x.content.trim()).length}</span>
+          </Link>
+        )}
         <Link className="btn" to="/import"><IconImport /> Import</Link>
         <button className="btn primary" onClick={addSong}><IconPlus /> New song</button>
       </div>

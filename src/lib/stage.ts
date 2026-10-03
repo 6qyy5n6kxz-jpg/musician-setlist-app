@@ -224,3 +224,10 @@ export function estimateDuration(tempo: number | null | undefined): number {
   if (!tempo) return getSettings().defaultDurationSec;
   return Math.round(Math.min(330, Math.max(150, 240 * (100 / tempo) ** 0.35)));
 }
+
+/** Section that should be showing at track time `t` (with a small lead so lyrics appear early). */
+export function timedSectionAt(marks: { pos: number; t: number }[], t: number, lead = 0.8): number {
+  let pos = -1;
+  for (const m of marks) if (m.t <= t + lead) pos = m.pos;
+  return pos;
+}

@@ -1,5 +1,6 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { QrCode } from "../components/QrCode";
 import { SyncBadge } from "../components/SyncBadge";
 import { db, live } from "../lib/db";
@@ -13,6 +14,13 @@ export function SettingsPage() {
   return (
     <div className="page stack" style={{ gap: 18, maxWidth: 900 }}>
       <div className="row"><h1 className="grow">Settings</h1><SyncBadge /></div>
+      <div className="card row wrap" style={{ borderColor: "var(--accent)" }}>
+        <div className="grow">
+          <strong>Gig check</strong>
+          <div className="small dim">Run at soundcheck: install, offline library, screen, sound, pedal, requests and live screens.</div>
+        </div>
+        <Link className="btn primary" to="/gigcheck">Run gig check</Link>
+      </div>
       <Account />
       <LiveScreens />
       <StageDisplay />

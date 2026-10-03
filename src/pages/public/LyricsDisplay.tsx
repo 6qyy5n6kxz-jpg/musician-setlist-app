@@ -42,12 +42,26 @@ export function LyricsDisplay() {
       {!state?.song || state.blank ? (
         state?.blank ? null : (
           <div className="d-splash">
-            <h1>{state?.setlist ?? "Live music"}</h1>
-            <p>Lyrics will appear here</p>
+            {state?.nextSingers?.length ? (
+              <>
+                <p style={{ textTransform: "uppercase", letterSpacing: "0.12em" }}>🎤 Up next to sing</p>
+                {state.nextSingers.map((n, i) => (
+                  <h1 key={i} style={{ fontSize: i === 0 ? "6vw" : "3.4vw", margin: "1vh 0", color: i === 0 ? "#fff" : "#9a9890" }}>
+                    {n.name} <span style={{ fontWeight: 400, fontSize: "0.5em", color: "#9a9890" }}>— {n.title}</span>
+                  </h1>
+                ))}
+              </>
+            ) : (
+              <>
+                <h1>{state?.setlist ?? "Live music"}</h1>
+                <p>Lyrics will appear here</p>
+              </>
+            )}
           </div>
         )
       ) : (
         <>
+          {state.singer && <div className="d-singer">🎤 {state.singer}</div>}
           {showTitle && <div className="d-title">{state.song.title}{state.song.artist ? ` — ${state.song.artist}` : ""}</div>}
           {current && !instrumental ? (
             <div key={`${state.song.id}-${current.pos}`} className="d-lines fade" style={style}>
@@ -59,8 +73,10 @@ export function LyricsDisplay() {
           {showNext && nextSlide && !instrumental && (
             <div className="d-next">{nextSlide.lines[0]}</div>
           )}
-          {showNext && !nextSlide && state.upNext && (
-            <div className="d-next">Up next: {state.upNext.title}</div>
+          {showNext && !nextSlide && (state.nextSingers?.[0] || state.upNext) && (
+            <div className="d-next">
+              {state.nextSingers?.[0] ? `🎤 Next singer: ${state.nextSingers[0].name} — ${state.nextSingers[0].title}` : `Up next: ${state.upNext!.title}`}
+            </div>
           )}
         </>
       )}
