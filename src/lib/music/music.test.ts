@@ -154,3 +154,14 @@ describe("fixMojibake", () => {
     expect(fixMojibake("plain text")).toBe("plain text");
   });
 });
+
+describe("Ultimate Guitar capo", () => {
+  it("stores sounding chords so capo shapes come out right", () => {
+    const { meta, body } = importChart("{title: Wonderwall}\n{key: F#m}\n{capo: 2}\n\n[Verse 1]\n[ch]Em[/ch]       [ch]G[/ch]\nToday is gonna be");
+    expect(meta).toMatchObject({ key: "F#m", capo: 2 });
+    expect(body).toContain("[F#m]Today is [A]gonna be");
+  });
+  it("leaves charts without UG markup alone", () => {
+    expect(importChart("{capo: 2}\n\n[Em]Today").body).toBe("[Em]Today");
+  });
+});

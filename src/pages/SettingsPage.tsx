@@ -9,6 +9,7 @@ import { appUrl } from "../lib/links";
 import { DEFAULT_SETTINGS, PEDAL_ACTION_LABELS, updateSettings, useSettings, type PedalAction, type Theme } from "../lib/settings";
 import { supabase } from "../lib/supabase";
 import { syncNow, useSyncStatus } from "../lib/sync";
+import SEND_TO_STAGE_JS from "../../shortcut/send-to-stage.js?raw";
 
 export function SettingsPage() {
   return (
@@ -22,6 +23,7 @@ export function SettingsPage() {
         <Link className="btn primary" to="/gigcheck">Run gig check</Link>
       </div>
       <Account />
+      <SendToStage />
       <LiveScreens />
       <StageDisplay />
       <Pedals />
@@ -123,6 +125,35 @@ function ChangePassword() {
       }}>Save</button>
       {msg && <span className="small">{msg}</span>}
     </div>
+  );
+}
+
+function SendToStage() {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Section title="Send charts from Ultimate Guitar" hint="Share a chart straight into the app, like sending it to OnSong.">
+      <ol className="small" style={{ margin: 0, paddingLeft: 20, lineHeight: 1.7 }}>
+        <li>Install the <strong>Send to Stage</strong> shortcut on the iPad (AirDrop the file from your Mac, or build it with the steps below).</li>
+        <li>In Safari, open a chart on ultimate-guitar.com, tap <strong>Share</strong> → <strong>Send to Stage</strong>.</li>
+        <li>The import screen opens with the chart converted — tap <strong>Import</strong>. If the song is already in your library without a chart, the chart is added to it.</li>
+      </ol>
+      <details>
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Build the shortcut by hand</summary>
+        <ol className="small" style={{ paddingLeft: 20, lineHeight: 1.7 }}>
+          <li>Shortcuts app → <strong>+</strong> → name it “Send to Stage”.</li>
+          <li>Tap the <strong>ⓘ</strong> (details) → turn on <strong>Show in Share Sheet</strong>, and set it to receive <strong>Safari web pages</strong>.</li>
+          <li>Add action <strong>Run JavaScript on Web Page</strong> (input: Shortcut Input). Replace its script with the one you copy here.</li>
+          <li>Add action <strong>Open URLs</strong> (it uses the result of the JavaScript).</li>
+        </ol>
+        <button className="btn small" onClick={async () => { await navigator.clipboard.writeText(SEND_TO_STAGE_JS); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
+          {copied ? "Copied" : "Copy script"}
+        </button>
+      </details>
+      <p className="small dim" style={{ margin: 0 }}>
+        The shortcut opens in Safari, which keeps its own copy of the app. Sign in there once and shared charts sync to the home-screen app within seconds.
+        No signal? Copy the chart text instead and use Import → Paste from clipboard.
+      </p>
+    </Section>
   );
 }
 

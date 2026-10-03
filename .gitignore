@@ -15,3 +15,6 @@ instance/
 # macOS / ExFAT metadata
 .DS_Store
 ._*
+
+# Signed shortcut (carries the signer's Apple ID) — share via AirDrop, not git
+*.shortcut

@@ -3,8 +3,8 @@
 //   - OnSong files (title/artist first lines, "Key: G" metadata, "Verse 1:" headers, inline [chords])
 //   - Chords-over-lyrics text (Ultimate Guitar copy/paste, PDFs-to-text, emails)
 //   - Ultimate Guitar markup ([ch]G[/ch], [tab]...[/tab])
-import { isChordLineFiller, parseChord } from "./chords";
-import { matchHeaderLine, sectionTypeFromLabel } from "./chordpro";
+import { isChordLineFiller, keyPrefersFlats, parseChord } from "./chords";
+import { matchHeaderLine, sectionTypeFromLabel, transposeContent } from "./chordpro";
 
 export interface ImportedChart {
   meta: {
@@ -135,6 +135,8 @@ export function fixMojibake(text: string): string {
 
 export function importChart(input: string, filename = ""): ImportedChart {
   const meta: ImportedChart["meta"] = {};
+  // Ultimate Guitar writes chords as played with the capo (shapes) but its key is the sounding key.
+  const ultimateGuitar = /\[ch\]/i.test(input);
   let text = fixMojibake(input)
     .replace(/\r\n?/g, "\n")
     .replace(/\[ch\](.*?)\[\/ch\]/gi, "$1") // Ultimate Guitar chord tags
@@ -240,12 +242,15 @@ export function importChart(input: string, filename = ""): ImportedChart {
   closeSection();
 
   // Collapse 3+ blank lines; blank lines right after a section start are noise
-  const body = out
+  let body = out
     .join("\n")
     .replace(/(\{start_of_[a-z]+(?::[^}]*)?\})\n+/g, "$1\n")
     .replace(/\n+(\{end_of_[a-z]+\})/g, "\n$1")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+
+  // This app stores sounding chords and derives capo shapes, so lift UG's shapes by the capo.
+  if (ultimateGuitar && meta.capo) body = transposeContent(body, meta.capo, keyPrefersFlats(meta.key));
 
   return { meta, body };
 }

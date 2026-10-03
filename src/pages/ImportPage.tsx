@@ -1,8 +1,12 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { ChartView } from "../components/ChartView";
 import { IconBack } from "../components/Icons";
+import { useSyncStatus } from "../lib/sync";
 import { addSongFile, blankSong, db, live, saveRow, type Setlist, type SetlistItem, type Song } from "../lib/db";
 import { importChart, parseDuration } from "../lib/music/convert";
+import { guessKey } from "../lib/music/chords";
+import { allChords, parseChordPro } from "../lib/music/chordpro";
 
 interface Candidate {
   key: string;
@@ -10,6 +14,8 @@ interface Candidate {
   source: string;
   file?: File; // PDF to attach
   duplicateOf?: string;
+  /** The existing song has no chart, so this import fills it in (keeps its setlists, tags, etc.). */
+  fillsChart?: boolean;
   include: boolean;
 }
 
@@ -29,7 +35,8 @@ function songFromText(text: string, filename: string): Song {
   return blankSong({
     title: meta.title || fallbackTitle || "Untitled",
     artist: meta.artist || "",
-    song_key: meta.key || null,
+    // The chart decides the written key: its {key}, else the chords themselves.
+    song_key: meta.key || guessKey(allChords(parseChordPro(body))),
     tempo: meta.tempo ?? null,
     time_signature: meta.time || null,
     capo: meta.capo ?? 0,
@@ -86,18 +93,62 @@ function parseCsv(text: string): string[][] {
 
 export function ImportPage() {
   const navigate = useNavigate();
+  const { userEmail } = useSyncStatus();
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || !!(navigator as { standalone?: boolean }).standalone;
   const [paste, setPaste] = useState("");
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [backup, setBackup] = useState<Backup | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
 
+  // Arriving from the "Send to Stage" shortcut: #/import?text=… (the chart travels in the URL fragment,
+  // which never leaves the device).
+  const [params, setParams] = useSearchParams();
+  const [incomingError, setIncomingError] = useState<string | null>(null);
+  const handled = useRef(false);
+  useEffect(() => {
+    if (handled.current) return;
+    const text = params.get("text");
+    const err = params.get("error");
+    if (!text && !err) return;
+    handled.current = true;
+    if (err) setIncomingError(err);
+    if (text) void addText(text, "Ultimate Guitar (shared)");
+    setParams({}, { replace: true });
+  }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addText = async (text: string, source: string) => {
+    const s = songFromText(text, "");
+    if (s.title === "Untitled") {
+      const first = text.trim().split("\n")[0].trim();
+      if (first.length < 80) s.title = first;
+    }
+    const marked = await markDuplicates([{ key: s.id, song: s, source, include: true }]);
+    setCandidates((prev) => [...prev, ...marked]);
+    setDone(null);
+  };
+
+  const pasteClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text.trim()) await addText(text, "Clipboard");
+      else setIncomingError("The clipboard is empty — copy the chart first.");
+    } catch {
+      setIncomingError("This browser blocked clipboard access — paste into the box below instead.");
+    }
+  };
+
   const markDuplicates = async (list: Candidate[]) => {
     const existing = live(await db.songs.toArray());
-    const byKey = new Map(existing.map((s) => [norm(s.title) + "|" + norm(s.artist), s.id]));
+    const byKey = new Map(existing.map((s) => [norm(s.title) + "|" + norm(s.artist), s]));
+    const byTitle = new Map<string, Song[]>();
+    for (const s of existing) byTitle.set(norm(s.title), [...(byTitle.get(norm(s.title)) ?? []), s]);
     return list.map((c) => {
-      const dup = byKey.get(norm(c.song.title) + "|" + norm(c.song.artist));
-      return { ...c, duplicateOf: dup, include: !dup };
+      // Same title + artist, or the only song with that title (artist names vary: "ft.", "&", "The")
+      const sameTitle = byTitle.get(norm(c.song.title));
+      const dup = byKey.get(norm(c.song.title) + "|" + norm(c.song.artist)) ?? (sameTitle?.length === 1 ? sameTitle[0] : undefined);
+      const fillsChart = !!dup && !dup.content.trim() && !!c.song.content.trim();
+      return { ...c, duplicateOf: dup?.id, fillsChart, include: !dup || fillsChart };
     });
   };
 
@@ -132,13 +183,7 @@ export function ImportPage() {
 
   const addPaste = async () => {
     if (!paste.trim()) return;
-    const s = songFromText(paste, "");
-    // pasted text without metadata: first line is usually the title
-    if (s.title === "Untitled") {
-      const first = paste.trim().split("\n")[0].trim();
-      if (first.length < 80) s.title = first;
-    }
-    setCandidates(await markDuplicates([...candidates, { key: s.id, song: s, source: "Pasted text", include: true }]));
+    await addText(paste, "Pasted text");
     setPaste("");
   };
 
@@ -146,10 +191,21 @@ export function ImportPage() {
     setBusy(true);
     let n = 0;
     for (const c of candidates.filter((c) => c.include)) {
-      const song = c.duplicateOf ? { ...c.song, id: c.duplicateOf } : c.song;
-      if (c.duplicateOf) {
-        const old = await db.songs.get(c.duplicateOf);
-        if (old) Object.assign(song, { created_at: old.created_at, tags: song.tags.length ? song.tags : old.tags });
+      let song = c.song;
+      const old = c.duplicateOf ? await db.songs.get(c.duplicateOf) : undefined;
+      if (old) {
+        // Keep the existing song (setlists, tags, karaoke, notes, length…) and bring in the chart.
+        song = {
+          ...old,
+          content: c.song.content || old.content,
+          song_key: c.song.content ? c.song.song_key ?? old.song_key : old.song_key,
+          capo: c.song.content ? c.song.capo : old.capo,
+          tempo: old.tempo ?? c.song.tempo,
+          time_signature: old.time_signature ?? c.song.time_signature,
+          duration_sec: old.duration_sec ?? c.song.duration_sec,
+          flow: old.flow ?? c.song.flow,
+          timings: c.song.content && c.song.content !== old.content ? null : old.timings,
+        };
       }
       await saveRow(db.songs, song);
       if (c.file) await addSongFile(song.id, c.file);
@@ -184,9 +240,50 @@ export function ImportPage() {
       <div className="row" style={{ marginBottom: 14 }}>
         <button className="btn ghost icon" onClick={() => navigate(-1)} aria-label="Back"><IconBack /></button>
         <h1 className="grow">Import</h1>
+        <button className="btn" onClick={pasteClipboard}>Paste from clipboard</button>
       </div>
 
       {done && <div className="card" style={{ marginBottom: 12, borderColor: "var(--ok)" }}>{done} <a href="#/">Go to songs</a></div>}
+      {incomingError && <div className="card" style={{ marginBottom: 12, borderColor: "var(--danger)" }}>{incomingError}</div>}
+      {candidates.length > 0 && !userEmail && !standalone && (
+        <div className="sticky-note">
+          This opened in Safari, which keeps its own copy of the app. <a href="#/settings">Sign in here once</a> and anything you
+          import syncs to the home-screen app automatically.
+        </div>
+      )}
+      {candidates.length > 0 && (
+        <div className="card" style={{ marginBottom: 16, borderColor: "var(--accent)" }}>
+          <div className="row" style={{ marginBottom: 10 }}>
+            <h2 className="grow" style={{ fontSize: "1.1rem" }}>Ready to import ({candidates.filter((c) => c.include).length} of {candidates.length})</h2>
+            <button className="btn" onClick={() => setCandidates([])}>Clear</button>
+            <button className="btn primary" onClick={runImport} disabled={busy || !candidates.some((c) => c.include)}>Import</button>
+          </div>
+          <ul className="list">
+            {candidates.map((c) => (
+              <li key={c.key} className="list-item">
+                <input type="checkbox" style={{ width: 22, height: 22 }} checked={c.include}
+                  onChange={(e) => setCandidates((all) => all.map((x) => (x.key === c.key ? { ...x, include: e.target.checked } : x)))} />
+                <div className="grow">
+                  <input className="input" style={{ minHeight: 34, marginBottom: 4 }} value={c.song.title}
+                    onChange={(e) => setCandidates((all) => all.map((x) => (x.key === c.key ? { ...x, song: { ...x.song, title: e.target.value } } : x)))} />
+                  <div className="small dim">
+                    {c.song.artist || "Unknown artist"}{c.song.song_key ? ` · ${c.song.song_key}` : ""} · {c.source}
+                    {c.file ? " · PDF attached" : c.song.content ? ` · ${c.song.content.split("\n").length} lines` : " · no chart"}
+                    {c.fillsChart && <span className="chip accent" style={{ marginLeft: 6 }}>adds the chart to your existing song</span>}
+                    {c.duplicateOf && !c.fillsChart && <span className="chip accent" style={{ marginLeft: 6 }}>already in library — check to replace its chart</span>}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+          {candidates.length === 1 && candidates[0].song.content && (
+            <div className="preview-pane" style={{ marginTop: 12, maxHeight: "45vh" }}>
+              <ChartView sections={parseChordPro(candidates[0].song.content).sections} songKey={candidates[0].song.song_key}
+                transpose={0} capo={0} showChords nashville={false} columns={1} fontScale={0.8} />
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="editor-grid">
         <div className="card stack">
@@ -217,32 +314,6 @@ export function ImportPage() {
         </div>
       </div>
 
-      {candidates.length > 0 && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <div className="row" style={{ marginBottom: 10 }}>
-            <h2 className="grow" style={{ fontSize: "1.1rem" }}>Ready to import ({candidates.filter((c) => c.include).length} of {candidates.length})</h2>
-            <button className="btn" onClick={() => setCandidates([])}>Clear</button>
-            <button className="btn primary" onClick={runImport} disabled={busy || !candidates.some((c) => c.include)}>Import</button>
-          </div>
-          <ul className="list">
-            {candidates.map((c) => (
-              <li key={c.key} className="list-item">
-                <input type="checkbox" style={{ width: 22, height: 22 }} checked={c.include}
-                  onChange={(e) => setCandidates((all) => all.map((x) => (x.key === c.key ? { ...x, include: e.target.checked } : x)))} />
-                <div className="grow">
-                  <input className="input" style={{ minHeight: 34, marginBottom: 4 }} value={c.song.title}
-                    onChange={(e) => setCandidates((all) => all.map((x) => (x.key === c.key ? { ...x, song: { ...x.song, title: e.target.value } } : x)))} />
-                  <div className="small dim">
-                    {c.song.artist || "Unknown artist"}{c.song.song_key ? ` · ${c.song.song_key}` : ""} · {c.source}
-                    {c.file ? " · PDF attached" : c.song.content ? ` · ${c.song.content.split("\n").length} lines` : " · no chart"}
-                    {c.duplicateOf && <span className="chip accent" style={{ marginLeft: 6 }}>already in library — check to replace</span>}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
