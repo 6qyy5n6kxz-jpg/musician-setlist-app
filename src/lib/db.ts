@@ -1,0 +1,202 @@
+// Local database (IndexedDB via Dexie). The app always reads and writes here first;
+// sync.ts mirrors it to Supabase whenever there's a connection.
+import Dexie, { type Table } from "dexie";
+
+export interface SyncFields {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  /** 1 = changed locally and not yet pushed. */
+  dirty: 0 | 1;
+}
+
+export interface Song extends SyncFields {
+  title: string;
+  artist: string;
+  song_key: string | null;
+  tempo: number | null;
+  time_signature: string | null;
+  duration_sec: number | null;
+  capo: number;
+  tags: string[];
+  genre: string | null;
+  year: number | null;
+  ccli: string | null;
+  content: string;
+  notes: string | null;
+  flow: string | null;
+  requestable: boolean;
+}
+
+export type FileKind = "pdf" | "audio" | "image";
+
+export interface SongFile extends SyncFields {
+  song_id: string;
+  kind: FileKind;
+  name: string;
+  mime: string | null;
+  size: number | null;
+  storage_path: string | null;
+}
+
+export interface Setlist extends SyncFields {
+  name: string;
+  event_date: string | null;
+  venue: string | null;
+  notes: string | null;
+}
+
+export interface SetlistItem extends SyncFields {
+  setlist_id: string;
+  song_id: string | null;
+  kind: "song" | "break";
+  label: string | null;
+  position: number;
+  key_override: string | null;
+  capo_override: number | null;
+  notes: string | null;
+}
+
+export interface Profile {
+  id: string;
+  display_name: string | null;
+  request_token: string;
+  requests_open: boolean;
+  request_message: string | null;
+  tip_url: string | null;
+  live_token: string;
+  settings: Record<string, unknown>;
+  updated_at: string;
+  dirty: 0 | 1;
+}
+
+export interface StoredBlob {
+  id: string; // song_files.id
+  blob: Blob;
+  /** 1 = needs uploading to storage */
+  dirty: 0 | 1;
+}
+
+export interface KV {
+  key: string;
+  value: unknown;
+}
+
+class StageDB extends Dexie {
+  songs!: Table<Song, string>;
+  song_files!: Table<SongFile, string>;
+  setlists!: Table<Setlist, string>;
+  setlist_items!: Table<SetlistItem, string>;
+  profile!: Table<Profile, string>;
+  blobs!: Table<StoredBlob, string>;
+  kv!: Table<KV, string>;
+
+  constructor() {
+    super("setlist-stage");
+    this.version(1).stores({
+      songs: "id, title, artist, dirty, updated_at",
+      song_files: "id, song_id, dirty",
+      setlists: "id, dirty, event_date, updated_at",
+      setlist_items: "id, setlist_id, song_id, dirty",
+      profile: "id",
+      blobs: "id, dirty",
+      kv: "key",
+    });
+  }
+}
+
+export const db = new StageDB();
+
+export const SYNC_TABLES = ["songs", "song_files", "setlists", "setlist_items"] as const;
+export type SyncTable = (typeof SYNC_TABLES)[number];
+
+export const nowIso = () => new Date().toISOString();
+export const newId = () => crypto.randomUUID();
+
+type Listener = () => void;
+const changeListeners = new Set<Listener>();
+/** sync.ts subscribes so local edits get pushed soon after they happen. */
+export function onLocalChange(fn: Listener) {
+  changeListeners.add(fn);
+  return () => changeListeners.delete(fn);
+}
+function notify() {
+  changeListeners.forEach((fn) => fn());
+}
+
+function baseRow(): SyncFields {
+  const t = nowIso();
+  return { id: newId(), created_at: t, updated_at: t, deleted_at: null, dirty: 1 };
+}
+
+export function blankSong(partial: Partial<Song> = {}): Song {
+  return {
+    ...baseRow(),
+    title: "", artist: "", song_key: null, tempo: null, time_signature: null, duration_sec: null,
+    capo: 0, tags: [], genre: null, year: null, ccli: null, content: "", notes: null, flow: null,
+    requestable: true,
+    ...partial,
+  };
+}
+
+export function blankSetlist(partial: Partial<Setlist> = {}): Setlist {
+  return { ...baseRow(), name: "", event_date: null, venue: null, notes: null, ...partial };
+}
+
+export function blankItem(partial: Partial<SetlistItem> & { setlist_id: string }): SetlistItem {
+  return {
+    ...baseRow(), song_id: null, kind: "song", label: null, position: 0,
+    key_override: null, capo_override: null, notes: null, ...partial,
+  };
+}
+
+/** Insert or update a row locally and queue it for sync. */
+export async function saveRow<T extends SyncFields>(table: Table<T, string>, row: T): Promise<T> {
+  const next = { ...row, updated_at: nowIso(), dirty: 1 as const };
+  await table.put(next);
+  notify();
+  return next;
+}
+
+export async function patchRow<T extends SyncFields>(table: Table<T, string>, id: string, patch: Partial<T>) {
+  const row = await table.get(id);
+  if (!row) return;
+  return saveRow(table, { ...row, ...patch });
+}
+
+export async function softDelete<T extends SyncFields>(table: Table<T, string>, id: string) {
+  return patchRow(table, id, { deleted_at: nowIso() } as Partial<T>);
+}
+
+export async function saveProfile(patch: Partial<Profile>) {
+  const p = await db.profile.toCollection().first();
+  if (!p) return;
+  await db.profile.put({ ...p, ...patch, updated_at: nowIso(), dirty: 1 });
+  notify();
+}
+
+export async function addSongFile(songId: string, file: File): Promise<SongFile> {
+  const kind: FileKind = file.type.startsWith("audio/") || /\.(mp3|m4a|wav|aac|ogg)$/i.test(file.name)
+    ? "audio"
+    : file.type.startsWith("image/") ? "image" : "pdf";
+  const row: SongFile = {
+    ...baseRow(), song_id: songId, kind, name: file.name, mime: file.type || null, size: file.size, storage_path: null,
+  };
+  await db.transaction("rw", db.song_files, db.blobs, async () => {
+    await db.song_files.put(row);
+    await db.blobs.put({ id: row.id, blob: file, dirty: 1 });
+  });
+  notify();
+  return row;
+}
+
+/** Position halfway between neighbours, so reordering only rewrites one row. */
+export function positionBetween(before: number | undefined, after: number | undefined): number {
+  if (before === undefined && after === undefined) return 1000;
+  if (before === undefined) return after! - 1000;
+  if (after === undefined) return before + 1000;
+  return (before + after) / 2;
+}
+
+export const live = <T extends { deleted_at: string | null }>(rows: T[]) => rows.filter((r) => !r.deleted_at);

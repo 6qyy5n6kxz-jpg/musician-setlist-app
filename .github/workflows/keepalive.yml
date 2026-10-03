@@ -1,0 +1,18 @@
+# Supabase pauses free projects after a week without activity. A tiny request every
+# couple of days keeps the backend awake so requests and live screens work at any gig.
+name: Keep backend awake
+
+on:
+  schedule:
+    - cron: "17 15 */2 * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase
+        run: |
+          curl -fsS -X POST "https://bovujlijcemlkbncflkv.supabase.co/rest/v1/rpc/ping" \
+            -H "apikey: sb_publishable_QSiLy3W32RjMSKTIbJ_ZjQ_uMJII3_n" \
+            -H "Content-Type: application/json" -d '{}'

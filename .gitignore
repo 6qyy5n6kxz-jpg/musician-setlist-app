@@ -1,12 +1,16 @@
-.env
+node_modules/
+dist/
+dev-dist/
+*.local
 
-# Python
+# Python (legacy app)
 __pycache__/
 *.pyc
 
-# Local data (never commit databases or uploads)
+# Local data (never commit databases, exports or uploads)
 *.db
 instance/
+*-backup*.json
 
 # macOS / ExFAT metadata
 .DS_Store
