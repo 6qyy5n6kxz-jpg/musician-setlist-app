@@ -24,9 +24,11 @@ export function App() {
     <HashRouter>
       <Routes>
         {/* Public pages: no login, reached by secret links / QR codes */}
-        <Route path="/r/:token" element={<PublicRequest />} />
-        <Route path="/display/:token" element={<LyricsDisplay />} />
-        <Route path="/band/:token" element={<BandFollow />} />
+        <Route element={<PublicShell />}>
+          <Route path="/r/:token" element={<PublicRequest />} />
+          <Route path="/display/:token" element={<LyricsDisplay />} />
+          <Route path="/band/:token" element={<BandFollow />} />
+        </Route>
 
         <Route element={<Private />}>
           <Route path="/perform/:setlistId" element={<Perform />} />
@@ -109,9 +111,29 @@ function RequestToasts() {
   );
 }
 
+/**
+ * Public screens (TV display, band phones, audience page) update themselves: nobody is there to
+ * tap "Update", and a TV left on the display page would otherwise run old code indefinitely.
+ */
+function PublicShell() {
+  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({
+    onRegisteredSW(_url, reg) {
+      if (reg) setInterval(() => void reg.update(), 30 * 60_000); // check for new versions every 30 min
+    },
+  });
+  useEffect(() => {
+    if (needRefresh) void updateServiceWorker(true);
+  }, [needRefresh, updateServiceWorker]);
+  return <Outlet />;
+}
+
 /** New version available: ask before reloading (never mid-song). */
 function UpdatePrompt() {
-  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
+  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({
+    onRegisteredSW(_url, reg) {
+      if (reg) setInterval(() => void reg.update(), 60 * 60_000);
+    },
+  });
   if (!needRefresh || location.hash.startsWith("#/perform")) return null;
   return (
     <div className="toast-stack">
