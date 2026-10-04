@@ -35,6 +35,40 @@ export function useSyncStatus(): SyncStatus {
 const LOCAL_ONLY = ["dirty"] as const;
 const OVERLAP_MS = 60_000; // re-read a minute back so late-committing writes aren't missed
 
+/**
+ * Defaults for every column, per table. Rows saved before a column existed lack the field, and the
+ * API rejects a batch whose rows don't all have the same keys ("All object keys must match"), so
+ * every pushed row is filled out to the full shape.
+ */
+const COLUMN_DEFAULTS: Record<SyncTable, Record<string, unknown>> = {
+  songs: {
+    title: "", artist: "", song_key: null, tempo: null, time_signature: null, duration_sec: null, capo: 0, tags: [],
+    genre: null, year: null, ccli: null, content: "", notes: null, flow: null, requestable: true, karaoke: false,
+    timings: null, instrument: null, lead_vocal: null, gear: {}, key_kendra: null, key_devin: null,
+  },
+  song_files: { song_id: null, kind: "pdf", name: "", mime: null, size: null, storage_path: null },
+  setlists: { name: "", act_id: null, signature: false, event_date: null, venue: null, notes: null },
+  setlist_items: {
+    setlist_id: null, song_id: null, kind: "song", label: null, position: 0, key_override: null, capo_override: null, notes: null,
+  },
+  gigs: { setlist_id: null, act_id: null, name: "", venue: null, gig_date: null, notes: null },
+  gig_songs: { gig_id: null, song_id: null, played_at: null, from_request: false },
+};
+const SYNC_DEFAULTS = { created_at: null, updated_at: null, deleted_at: null };
+
+export function toServerRow(table: SyncTable, row: Record<string, unknown>) {
+  const out = toServer({ ...SYNC_DEFAULTS, ...COLUMN_DEFAULTS[table], ...row });
+  // Only send known columns (drops anything stale a very old client might have stored)
+  const allowed = new Set(["id", ...Object.keys(SYNC_DEFAULTS), ...Object.keys(COLUMN_DEFAULTS[table])]);
+  for (const k of Object.keys(out)) if (!allowed.has(k)) delete out[k];
+  // Keep every row the same shape: fill missing timestamps rather than dropping the key
+  const now = new Date().toISOString();
+  for (const k of ["created_at", "updated_at"]) out[k] ??= now;
+  if (table === "gig_songs") out.played_at ??= now;
+  if (table === "gigs") out.gig_date ??= now.slice(0, 10);
+  return out;
+}
+
 function toServer<T extends Record<string, unknown>>(row: T) {
   const out: Record<string, unknown> = { ...row };
   for (const k of LOCAL_ONLY) delete out[k];
@@ -103,7 +137,7 @@ async function pushTable(table: SyncTable) {
     const chunk = dirty.slice(i, i + 200);
     const { data, error } = await supabase
       .from(table)
-      .upsert(chunk.map((r) => toServer(r as unknown as Record<string, unknown>)))
+      .upsert(chunk.map((r) => toServerRow(table, r as unknown as Record<string, unknown>)))
       .select();
     if (error) throw new Error(`${table}: ${error.message}`);
     // Write back the server's copy, unless the row was edited again while we were pushing.
