@@ -5,6 +5,7 @@ import { IconBack } from "../components/Icons";
 import { useSyncStatus } from "../lib/sync";
 import { addSongFile, blankSong, db, live, saveRow, type Setlist, type SetlistItem, type Song } from "../lib/db";
 import { importChart, parseDuration } from "../lib/music/convert";
+import { expandZips } from "../lib/zipImport";
 import { guessKey } from "../lib/music/chords";
 import { allChords, parseChordPro } from "../lib/music/chordpro";
 
@@ -156,7 +157,17 @@ export function ImportPage() {
     if (!files?.length) return;
     setDone(null);
     const list: Candidate[] = [];
-    for (const f of Array.from(files)) {
+    if (Array.from(files).some((f) => /\.backup$/i.test(f.name))) {
+      setIncomingError("That's a full OnSong backup (it holds OnSong's own database). Send it to your Mac and it can be converted there — or export your library from OnSong as ChordPro and import that zip here.");
+    }
+    let expanded: File[];
+    try {
+      expanded = await expandZips(Array.from(files).filter((f) => !/\.backup$/i.test(f.name)));
+    } catch {
+      setIncomingError("Couldn't open that zip file.");
+      return;
+    }
+    for (const f of expanded) {
       if (f.name.startsWith("._")) continue;
       if (/\.json$/i.test(f.name)) {
         try {
@@ -297,11 +308,12 @@ export function ImportPage() {
           <h2 style={{ fontSize: "1.1rem" }}>Import files</h2>
           <p className="small dim">
             ChordPro (.cho, .chopro, .pro), OnSong (.onsong), text charts (.txt), PDFs (title from the filename,
-            “Title - Artist.pdf”), a CSV song list, or a Setlist Stage backup (.json). Select many at once.
+            “Title - Artist.pdf”), a CSV song list, a Setlist Stage backup (.json), or a <strong>.zip</strong> of any of these
+            (e.g. your whole OnSong library exported as ChordPro). Select many at once.
           </p>
           <label className="btn">
             Choose files…
-            <input type="file" multiple hidden accept=".cho,.chopro,.chordpro,.pro,.crd,.onsong,.txt,.pdf,.csv,.json,text/plain,application/pdf"
+            <input type="file" multiple hidden accept=".cho,.chopro,.chordpro,.pro,.crd,.onsong,.txt,.pdf,.csv,.json,.zip,.backup,text/plain,application/pdf,application/zip"
               onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }} />
           </label>
           {backup && (

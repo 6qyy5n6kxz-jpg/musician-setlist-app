@@ -18,3 +18,7 @@ instance/
 
 # Signed shortcut (carries the signer's Apple ID) — share via AirDrop, not git
 *.shortcut
+
+# OnSong backups / library exports (personal song data) — never commit
+*.backup
+OnSong*.zip
