@@ -339,3 +339,13 @@ h1, h2, h3 { line-height: 1.15; margin: 0; }
 .gear-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .gear-strip .chip { font-size: 0.85rem; padding: 4px 10px; color: var(--text); }
 .gear-strip .chip.accent { color: var(--accent); }
+
+/* PDF charts + notes layer */
+.pdf-toolbar {
+  position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 8px 0; margin-bottom: 8px; background: var(--bg);
+}
+.pdf-toolbar .swatch { display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.7); }
+.pdf-page { position: relative; margin: 0 auto 12px; background: #fff; border-radius: 4px; overflow: hidden; }
+.pdf-page canvas { display: block; }
+.pdf-ink { position: absolute; inset: 0; }

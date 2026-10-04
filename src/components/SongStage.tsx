@@ -267,7 +267,11 @@ export function SongStage(props: Props) {
         </div>
         {song.notes && <div className="sticky-note">{song.notes}</div>}
         {view === "pdf" && pdfBlob ? (
-          <PdfView blob={pdfBlob} />
+          <PdfView
+            blob={pdfBlob}
+            annotations={pdf?.annotations}
+            onAnnotationsChange={pdf ? (a) => void patchRow(db.song_files, pdf.id, { annotations: a }) : undefined}
+          />
         ) : view === "pdf" && pdf && !pdfBlob ? (
           <div className="card dim">This PDF hasn't downloaded to this device yet. Connect once and it will be saved for offline use.</div>
         ) : hasChart ? (

@@ -46,7 +46,7 @@ const COLUMN_DEFAULTS: Record<SyncTable, Record<string, unknown>> = {
     genre: null, year: null, ccli: null, content: "", notes: null, flow: null, requestable: true, karaoke: false,
     timings: null, instrument: null, lead_vocal: null, gear: {}, key_kendra: null, key_devin: null,
   },
-  song_files: { song_id: null, kind: "pdf", name: "", mime: null, size: null, storage_path: null },
+  song_files: { song_id: null, kind: "pdf", name: "", mime: null, size: null, storage_path: null, annotations: {} },
   setlists: { name: "", act_id: null, signature: false, event_date: null, venue: null, notes: null },
   setlist_items: {
     setlist_id: null, song_id: null, kind: "song", label: null, position: 0, key_override: null, capo_override: null, notes: null,

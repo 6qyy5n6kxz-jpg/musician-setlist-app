@@ -2,6 +2,7 @@
 // sync.ts mirrors it to Supabase whenever there's a connection.
 import Dexie, { type Table } from "dexie";
 import type { GearLibrary, Instrument, LeadVocal, SongGear } from "./gear";
+import type { PdfAnnotations } from "./annotations";
 
 export interface SyncFields {
   id: string;
@@ -75,6 +76,8 @@ export interface SongFile extends SyncFields {
   mime: string | null;
   size: number | null;
   storage_path: string | null;
+  /** Ink / highlighter / text notes drawn over the PDF (the PDF itself is untouched). */
+  annotations?: PdfAnnotations;
 }
 
 export interface Setlist extends SyncFields {
@@ -256,6 +259,7 @@ export async function addSongFile(songId: string, file: File): Promise<SongFile>
     : file.type.startsWith("image/") ? "image" : "pdf";
   const row: SongFile = {
     ...baseRow(), song_id: songId, kind, name: file.name, mime: file.type || null, size: file.size, storage_path: null,
+    annotations: {},
   };
   // Store a copy of the bytes, not the picked File: iPad Safari can hand back a File from the Files
   // app that later reads as empty once the picker's temporary copy is cleaned up.
