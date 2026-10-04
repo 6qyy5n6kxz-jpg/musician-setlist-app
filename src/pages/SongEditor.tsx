@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ChartView } from "../components/ChartView";
 import { IconBack, IconFile, IconMusic, IconTrash } from "../components/Icons";
 import { addSongFile, db, saveRow, softDelete, type Song } from "../lib/db";
-import { useSong, useSongFiles } from "../lib/hooks";
+import { useProfile, useSong, useSongFiles, useSongs } from "../lib/hooks";
+import { SongGearEditor } from "../components/GearUI";
 import { ALL_KEYS, guessKey } from "../lib/music/chords";
 import { allChords, parseChordPro, sectionAbbrev } from "../lib/music/chordpro";
 import { importChart } from "../lib/music/convert";
@@ -33,6 +34,12 @@ export function SongEditor() {
   const textRef = useRef<HTMLTextAreaElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const files = useSongFiles(id);
+  const profile = useProfile();
+  const allSongs = useSongs();
+  const gearHistory = useMemo(
+    () => (allSongs ?? []).filter((s) => s.id !== id && s.gear && Object.keys(s.gear).length).map((s) => ({ artist: s.artist, gear: s.gear })),
+    [allSongs, id],
+  );
 
   // Load once; after that the draft is the source of truth while editing.
   useEffect(() => {
@@ -169,6 +176,11 @@ export function SongEditor() {
           <label className="check"><input type="checkbox" checked={draft.requestable} onChange={(e) => update({ requestable: e.target.checked })} /> Show on the audience request page</label>
           <label className="check"><input type="checkbox" checked={draft.karaoke ?? false} onChange={(e) => update({ karaoke: e.target.checked })} /> Available for karaoke sign-up</label>
         </div>
+      </div>
+
+      <div className="card stack" style={{ marginBottom: 16 }}>
+        <h2 style={{ fontSize: "1.1rem" }}>Duo & gear</h2>
+        <SongGearEditor song={draft} library={profile?.gear_library ?? {}} history={gearHistory} onChange={update} />
       </div>
 
       <div className="editor-grid">

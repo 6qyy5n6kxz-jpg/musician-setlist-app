@@ -1,6 +1,7 @@
 // Local database (IndexedDB via Dexie). The app always reads and writes here first;
 // sync.ts mirrors it to Supabase whenever there's a connection.
 import Dexie, { type Table } from "dexie";
+import type { GearLibrary, Instrument, LeadVocal, SongGear } from "./gear";
 
 export interface SyncFields {
   id: string;
@@ -31,6 +32,12 @@ export interface Song extends SyncFields {
   karaoke: boolean;
   /** Section start times recorded against the song's backing track. */
   timings: SongTimings | null;
+  /** The one instrument Devin plays on this song. */
+  instrument: Instrument | null;
+  /** Who sings lead. */
+  lead_vocal: LeadVocal | null;
+  /** Numa X / Nano Cortex / BeatBuddy settings for this song. */
+  gear: SongGear;
 }
 
 export interface SongTimings {
@@ -83,6 +90,8 @@ export interface Profile {
   live_token: string;
   karaoke_open: boolean;
   acts: Act[];
+  /** The performer's own preset lists for the Numa X, Nano Cortex and BeatBuddy. */
+  gear_library: GearLibrary;
   /** The act currently performing: its name, message and tip link show on the request page. */
   active_act: string | null;
   settings: Record<string, unknown>;
@@ -161,7 +170,7 @@ export function blankSong(partial: Partial<Song> = {}): Song {
     ...baseRow(),
     title: "", artist: "", song_key: null, tempo: null, time_signature: null, duration_sec: null,
     capo: 0, tags: [], genre: null, year: null, ccli: null, content: "", notes: null, flow: null,
-    requestable: true, karaoke: false, timings: null,
+    requestable: true, karaoke: false, timings: null, instrument: null, lead_vocal: null, gear: {},
     ...partial,
   };
 }

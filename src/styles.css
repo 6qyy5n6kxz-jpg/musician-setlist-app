@@ -335,3 +335,7 @@ h1, h2, h3 { line-height: 1.15; margin: 0; }
   .print-only h2 { font-size: 18pt; margin: 14pt 0 6pt; list-style: none; }
   .print-only li { margin: 4pt 0; }
 }
+
+.gear-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.gear-strip .chip { font-size: 0.85rem; padding: 4px 10px; color: var(--text); }
+.gear-strip .chip.accent { color: var(--accent); }

@@ -152,7 +152,7 @@ async function pushProfile() {
     .from("profiles")
     .update({
       display_name: p.display_name, requests_open: p.requests_open, karaoke_open: p.karaoke_open ?? false,
-      acts: p.acts ?? [], active_act: p.active_act ?? null,
+      acts: p.acts ?? [], active_act: p.active_act ?? null, gear_library: p.gear_library ?? {},
       request_message: p.request_message,
       tip_url: p.tip_url, settings: p.settings, updated_at: p.updated_at,
     })

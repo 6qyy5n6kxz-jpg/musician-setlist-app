@@ -8,6 +8,7 @@ import { blankItem, db, patchRow, positionBetween, saveRow, softDelete, type Set
 import { useProfile, useSetlistItems, useSetlists, useSongs } from "../lib/hooks";
 import { ALL_KEYS } from "../lib/music/chords";
 import { estimateDuration, formatDuration } from "../lib/stage";
+import { setBalance } from "../lib/gear";
 
 export function SetlistEditor() {
   const { id } = useParams();
@@ -59,15 +60,22 @@ export function SetlistEditor() {
   };
 
   // Totals per set (split at breaks)
-  const blocks: { label: string; count: number; seconds: number }[] = [{ label: "Set 1", count: 0, seconds: 0 }];
+  const blocks: { label: string; count: number; seconds: number; songs: Song[] }[] = [{ label: "Set 1", count: 0, seconds: 0, songs: [] }];
   for (const it of items) {
-    if (it.kind === "break") blocks.push({ label: it.label || "Set", count: 0, seconds: 0 });
+    if (it.kind === "break") blocks.push({ label: it.label || "Set", count: 0, seconds: 0, songs: [] });
     else if (it.song_id && songMap.get(it.song_id)) {
       const s = songMap.get(it.song_id)!;
       blocks[blocks.length - 1].count++;
       blocks[blocks.length - 1].seconds += s.duration_sec || estimateDuration(s.tempo);
+      blocks[blocks.length - 1].songs.push(s);
     }
   }
+  const balanceText = (list: Song[]) => {
+    const b = setBalance(list.map((s) => ({ instrument: s.instrument ?? null, lead_vocal: s.lead_vocal ?? null })));
+    if (b.vocals.unset === list.length && b.instruments.unset === list.length) return "";
+    return ` · K ${b.vocals.kendra} / D ${b.vocals.devin} / Both ${b.vocals.both} · 🎹${b.instruments.piano} ⚡${b.instruments.electric} 🎸${b.instruments.acoustic} · ${b.switches} instrument switch${b.switches === 1 ? "" : "es"}`;
+  };
+  const allSetSongs = blocks.flatMap((b) => b.songs);
   const total = blocks.reduce((a, b) => a + b.seconds, 0);
   const totalCount = blocks.reduce((a, b) => a + b.count, 0);
 
@@ -110,8 +118,8 @@ export function SetlistEditor() {
       <div className="editor-grid" style={{ gridTemplateColumns: "3fr 2fr" }}>
         <div>
           <div className="set-totals" style={{ marginBottom: 8 }}>
-            <strong style={{ color: "var(--text)" }}>{totalCount} songs · {formatDuration(total)}</strong>
-            {blocks.length > 1 && blocks.map((b, i) => <span key={i}>{b.label}: {b.count} · {formatDuration(b.seconds)}</span>)}
+            <strong style={{ color: "var(--text)" }}>{totalCount} songs · {formatDuration(total)}{balanceText(allSetSongs)}</strong>
+            {blocks.length > 1 && blocks.map((b, i) => <span key={i}>{b.label}: {b.count} · {formatDuration(b.seconds)}{balanceText(b.songs)}</span>)}
           </div>
           {items.length === 0 ? (
             <div className="empty-state card">Add songs from your library on the right, or auto-build a set.</div>
@@ -119,10 +127,14 @@ export function SetlistEditor() {
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
               <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
                 <ul className="list">
-                  {items.map((it) => {
+                  {items.map((it, i) => {
                     if (it.kind === "song") num++;
                     else num = 0;
-                    return <SetRow key={it.id} item={it} song={it.song_id ? songMap.get(it.song_id) : undefined} number={num} />;
+                    const song = it.song_id ? songMap.get(it.song_id) : undefined;
+                    const prevItem = items[i - 1];
+                    const prev = prevItem?.kind === "song" && prevItem.song_id ? songMap.get(prevItem.song_id) : undefined;
+                    const switching = !!(prev?.instrument && song?.instrument && prev.instrument !== song.instrument);
+                    return <SetRow key={it.id} item={it} song={song} number={num} switching={switching} />;
                   })}
                 </ul>
               </SortableContext>
@@ -165,7 +177,7 @@ export function SetlistEditor() {
   );
 }
 
-function SetRow({ item, song, number }: { item: SetlistItem; song?: Song; number: number }) {
+function SetRow({ item, song, number, switching }: { item: SetlistItem; song?: Song; number: number; switching?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.6 : 1, zIndex: isDragging ? 5 : undefined, position: "relative" as const };
 
@@ -187,7 +199,12 @@ function SetRow({ item, song, number }: { item: SetlistItem; song?: Song; number
         {song ? (
           <Link to={`/song/${song.id}`} style={{ color: "inherit", textDecoration: "none" }}>
             <div className="truncate" style={{ fontWeight: 600 }}>{song.title}</div>
-            <div className="small dim truncate">{song.artist} · {formatDuration(song.duration_sec || estimateDuration(song.tempo))}</div>
+            <div className="small dim truncate">
+              {song.artist} · {formatDuration(song.duration_sec || estimateDuration(song.tempo))}
+              {song.lead_vocal ? ` · 🎤 ${song.lead_vocal === "both" ? "K+D" : song.lead_vocal === "kendra" ? "Kendra" : "Devin"}` : ""}
+              {song.instrument ? ` · ${song.instrument === "piano" ? "🎹" : song.instrument === "electric" ? "⚡" : "🎸"}` : ""}
+              {switching ? " · ⇄ switch" : ""}
+            </div>
           </Link>
         ) : <div className="dim">Song was deleted</div>}
       </div>

@@ -1,6 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { GearLibraryEditor } from "../components/GearLibraryEditor";
 import { QrCode } from "../components/QrCode";
 import { SyncBadge } from "../components/SyncBadge";
 import { db, live } from "../lib/db";
@@ -24,6 +25,7 @@ export function SettingsPage() {
       </div>
       <Account />
       <SendToStage />
+      <GearSection />
       <LiveScreens />
       <StageDisplay />
       <Pedals />
@@ -125,6 +127,20 @@ function ChangePassword() {
       }}>Save</button>
       {msg && <span className="small">{msg}</span>}
     </div>
+  );
+}
+
+function GearSection() {
+  const profile = useProfile();
+  return (
+    <Section title="Gear & MIDI Captain" hint="Numa X, Nano Cortex and BeatBuddy settings per song, switched from your MIDI Captain.">
+      <div className="sticky-note" style={{ margin: 0 }}>
+        <strong>MIDI Captain → this app:</strong> set a switch to send a keyboard key over USB (HID mode in the Captain's
+        settings — e.g. Page Down), plug the Captain into the iPad, then map that key under <em>Foot pedals & keys</em> below with
+        <em> Learn</em>. One switch can send a key to the app and MIDI to your gear at the same time.
+      </div>
+      {profile ? <GearLibraryEditor profile={profile} /> : <div className="small dim">Sign in to set up your gear.</div>}
+    </Section>
   );
 }
 

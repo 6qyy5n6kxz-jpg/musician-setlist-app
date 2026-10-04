@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { IconImport, IconPlus, IconSearch } from "../components/Icons";
 import { SyncBadge } from "../components/SyncBadge";
+import { DuoBadges } from "../components/GearUI";
 import { blankSong, db, live, saveRow, type Song } from "../lib/db";
 import { sortTitle, useSongs } from "../lib/hooks";
 import { formatDuration } from "../lib/stage";
@@ -16,6 +17,8 @@ export function Library() {
   const [tag, setTag] = useState("");
   const [sort, setSort] = useState<SortMode>("title");
   const [inLyrics, setInLyrics] = useState(false);
+  const [instrument, setInstrument] = useState("");
+  const [vocal, setVocal] = useState("");
 
   const fileKinds = useLiveQuery(async () => {
     const map = new Map<string, Set<string>>();
@@ -37,6 +40,8 @@ export function Library() {
     const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
     let list = songs.filter((s) => {
       if (tag && !s.tags.includes(tag)) return false;
+      if (instrument && (s.instrument ?? "none") !== instrument) return false;
+      if (vocal && (s.lead_vocal ?? "none") !== vocal) return false;
       if (!terms.length) return true;
       const hay = [s.title, s.artist, s.song_key ?? "", s.genre ?? "", s.tags.join(" "), inLyrics ? s.content : ""]
         .join(" ")
@@ -47,7 +52,7 @@ export function Library() {
     if (sort === "recent") list = [...list].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
     if (sort === "key") list = [...list].sort((a, b) => (a.song_key ?? "~").localeCompare(b.song_key ?? "~"));
     return list;
-  }, [songs, q, tag, sort, inLyrics]);
+  }, [songs, q, tag, sort, inLyrics, instrument, vocal]);
 
   const addSong = async () => {
     const s = await saveRow(db.songs, blankSong());
@@ -94,6 +99,16 @@ export function Library() {
           <option value="">All tags</option>
           {tags.map((t) => <option key={t}>{t}</option>)}
         </select>
+        <select className="select" style={{ width: "auto" }} value={instrument} onChange={(e) => setInstrument(e.target.value)} aria-label="Filter by instrument">
+          <option value="">Any instrument</option>
+          <option value="piano">🎹 Piano</option><option value="electric">⚡ Electric</option><option value="acoustic">🎸 Acoustic</option>
+          <option value="none">Not set</option>
+        </select>
+        <select className="select" style={{ width: "auto" }} value={vocal} onChange={(e) => setVocal(e.target.value)} aria-label="Filter by lead vocal">
+          <option value="">Any vocal</option>
+          <option value="kendra">Kendra</option><option value="devin">Devin</option><option value="both">Both</option>
+          <option value="none">Not set</option>
+        </select>
         <div className="seg" role="group" aria-label="Sort">
           {(["title", "artist", "key", "recent"] as SortMode[]).map((m) => (
             <button key={m} className={sort === m ? "on" : ""} onClick={() => setSort(m)}>
@@ -130,6 +145,7 @@ export function Library() {
                     <div className="title truncate">{s.title || "Untitled"}</div>
                     <div className="meta small dim">
                       <span className="truncate">{s.artist}</span>
+                      <DuoBadges song={s} />
                       {s.tempo ? <span className="chip">{s.tempo} bpm</span> : null}
                       {s.duration_sec ? <span className="chip">{formatDuration(s.duration_sec)}</span> : null}
                       {!s.content.trim() && !kinds?.has("pdf") ? <span className="chip">no chart</span> : null}

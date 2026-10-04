@@ -9,6 +9,7 @@ import { guessKey, keyDistance } from "../lib/music/chords";
 import { allChords, lyricSlides, parseChordPro, type Section } from "../lib/music/chordpro";
 import { describeRequest, karaokeLineup, openQueue, useRequests, type SongRequest } from "../lib/requests";
 import { KaraokePanel } from "../components/KaraokePanel";
+import { GearStrip } from "../components/GearUI";
 import { useSettings } from "../lib/settings";
 import { useSyncStatus } from "../lib/sync";
 import { useWakeLock } from "../lib/stage";
@@ -254,7 +255,13 @@ export function Perform() {
                 nextSlide: () => stepSlide(1), prevSlide: () => stepSlide(-1),
                 blankDisplay: () => setBlank((b) => !b),
               }}
-              kicker={item?.notes ? <div className="sticky-note">{item.notes}</div> : null}
+              kicker={
+                <>
+                  <GearStrip song={song} library={profile?.gear_library ?? {}}
+                    next={!extra && setlistId && playable[index + 1] ? songMap.get(playable[index + 1].song_id!) : undefined} />
+                  {item?.notes ? <div className="sticky-note">{item.notes}</div> : null}
+                </>
+              }
             />
           ) : (
             <div className="empty-state">This set has no songs yet.</div>

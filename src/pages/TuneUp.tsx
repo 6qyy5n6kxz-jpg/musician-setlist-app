@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { DuoPickers } from "../components/GearUI";
 import { IconBack } from "../components/Icons";
 import { db, patchRow, saveRow, type Song } from "../lib/db";
 import { useSongs } from "../lib/hooks";
@@ -19,7 +20,7 @@ interface Suggestion {
   error?: string;
 }
 
-type Filter = "all" | "chart" | "info";
+type Filter = "all" | "chart" | "info" | "duo";
 
 const chartSearchUrl = (s: Song) =>
   `https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(`${s.title} ${s.artist}`)}`;
@@ -36,11 +37,12 @@ export function TuneUp() {
   const [toast, setToast] = useState<string | null>(null);
 
   const list = useMemo(() => (songs ?? []).filter((s) =>
-    filter === "all" ? true : filter === "chart" ? !s.content.trim() : !s.duration_sec || !s.tempo || !s.year,
+    filter === "all" ? true : filter === "chart" ? !s.content.trim() : filter === "duo" ? !s.instrument || !s.lead_vocal : !s.duration_sec || !s.tempo || !s.year,
   ), [songs, filter]);
   const counts = useMemo(() => ({
     chart: (songs ?? []).filter((s) => !s.content.trim()).length,
     info: (songs ?? []).filter((s) => !s.duration_sec || !s.tempo || !s.year).length,
+    duo: (songs ?? []).filter((s) => !s.instrument || !s.lead_vocal).length,
   }), [songs]);
 
   const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500); };
@@ -117,6 +119,7 @@ export function TuneUp() {
         <div className="seg">
           <button className={filter === "chart" ? "on" : ""} onClick={() => setFilter("chart")}>Needs chart ({counts.chart})</button>
           <button className={filter === "info" ? "on" : ""} onClick={() => setFilter("info")}>Needs details ({counts.info})</button>
+          <button className={filter === "duo" ? "on" : ""} onClick={() => setFilter("duo")}>Needs vocal/instrument ({counts.duo})</button>
           <button className={filter === "all" ? "on" : ""} onClick={() => setFilter("all")}>All</button>
         </div>
       </div>
@@ -186,6 +189,7 @@ export function TuneUp() {
                       onBlur={(e) => patchRow(db.songs, s.id, { year: Number(e.target.value) || null })} />
                   </label>
                   {g?.year && g.year !== s.year && <button className="chip accent" onClick={() => accept(s, "year")}>{g.year} ✓</button>}
+                  <DuoPickers compact song={s} onChange={(patch) => patchRow<Song>(db.songs, s.id, patch)} />
                   <label className="check small" style={{ minHeight: 34 }}>
                     <input type="checkbox" checked={s.karaoke ?? false} onChange={(e) => patchRow(db.songs, s.id, { karaoke: e.target.checked })} /> Karaoke
                   </label>
