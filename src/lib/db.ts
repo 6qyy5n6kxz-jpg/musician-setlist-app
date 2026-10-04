@@ -233,6 +233,16 @@ export async function softDelete<T extends SyncFields>(table: Table<T, string>, 
   return patchRow(table, id, { deleted_at: nowIso() } as Partial<T>);
 }
 
+/** Delete a song and its attachments (so orphaned files don't sit in the upload queue). */
+export async function deleteSong(id: string) {
+  await softDelete(db.songs, id);
+  const files = live(await db.song_files.where("song_id").equals(id).toArray());
+  for (const f of files) {
+    await softDelete(db.song_files, f.id);
+    await db.blobs.update(f.id, { dirty: 0 });
+  }
+}
+
 export async function saveProfile(patch: Partial<Profile>) {
   const p = await db.profile.toCollection().first();
   if (!p) return;

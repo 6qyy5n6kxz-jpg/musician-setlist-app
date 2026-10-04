@@ -223,7 +223,8 @@ async function uploadBlobs(userId: string): Promise<string[]> {
   let uploaded = 0;
   for (const b of pending) {
     const file = await db.song_files.get(b.id);
-    if (!file || file.deleted_at) {
+    const song = file ? await db.songs.get(file.song_id) : undefined;
+    if (!file || file.deleted_at || !song || song.deleted_at) {
       await db.blobs.update(b.id, { dirty: 0 });
       continue;
     }
@@ -244,7 +245,13 @@ async function uploadBlobs(userId: string): Promise<string[]> {
       .from(FILE_BUCKET)
       .upload(path, b.blob, { upsert: true, contentType: file.mime ?? undefined });
     if (error) {
-      failed.push(file.name); // network or server trouble: leave it pending and try next sync
+      failed.push(file.name);
+      // The server rejected the file itself (too big, bad request): stop retrying until it's re-attached.
+      // Network trouble or server outages stay pending and retry on the next sync.
+      const status = Number((error as { statusCode?: string | number }).statusCode ?? 0);
+      if (status >= 400 && status < 500 && status !== 401 && status !== 408 && status !== 429) {
+        await db.blobs.update(b.id, { dirty: 0, failed: error.message });
+      }
       continue;
     }
     await db.blobs.update(b.id, { dirty: 0, failed: undefined });

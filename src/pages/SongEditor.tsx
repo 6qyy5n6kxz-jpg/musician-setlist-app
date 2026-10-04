@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ChartView } from "../components/ChartView";
 import { IconBack, IconFile, IconMusic, IconTrash } from "../components/Icons";
-import { addSongFile, db, saveRow, softDelete, type Song } from "../lib/db";
+import { addSongFile, db, deleteSong, saveRow, softDelete, type Song } from "../lib/db";
 import { useProfile, useSong, useSongFiles, useSongs } from "../lib/hooks";
 import { SongGearEditor } from "../components/GearUI";
 import { ALL_KEYS, guessKey } from "../lib/music/chords";
@@ -101,7 +101,7 @@ export function SongEditor() {
 
   const remove = async () => {
     if (!confirm(`Delete “${draft.title || "this song"}”? It will also be removed from setlists.`)) return;
-    await softDelete(db.songs, draft.id);
+    await deleteSong(draft.id);
     navigate("/");
   };
 
