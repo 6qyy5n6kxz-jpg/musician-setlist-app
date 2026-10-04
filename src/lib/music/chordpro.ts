@@ -38,6 +38,9 @@ const META_ALIASES: Record<string, string> = {
 
 const SECTION_WORDS: [RegExp, SectionType][] = [
   [/^pre[- ]?chorus/i, "prechorus"],
+  [/^pre[- ]?verse/i, "interlude"],
+  [/^(guitar|piano|keys?|sax|bass|drum|harmonica|fiddle)\s+solo/i, "solo"],
+  [/^fade(\s*out)?$/i, "outro"],
   [/^chorus/i, "chorus"],
   [/^verse/i, "verse"],
   [/^bridge/i, "bridge"],

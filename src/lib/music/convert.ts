@@ -10,12 +10,14 @@ export interface ImportedChart {
   meta: {
     title?: string; artist?: string; key?: string; tempo?: number; time?: string; capo?: number;
     duration_sec?: number; ccli?: string; flow?: string; year?: number;
+    /** Reminders found in metadata (capo notes, BeatBuddy settings…) for the song's sticky note. */
+    notes?: string;
   };
   body: string;
 }
 
 const DIRECTIVE_META: Record<string, keyof ImportedChart["meta"]> = {
-  t: "title", title: "title", st: "artist", subtitle: "artist", artist: "artist",
+  t: "title", title: "title", artist: "artist",
   key: "key", tempo: "tempo", time: "time", capo: "capo", duration: "duration_sec", ccli: "ccli", year: "year",
 };
 
@@ -49,6 +51,53 @@ function setMeta(meta: ImportedChart["meta"], key: keyof ImportedChart["meta"], 
     default:
       meta[key] = v;
   }
+}
+
+const BEAT_STYLES = /^(oldie|blues|ballad|pop|rock|country|funk|brushes|pop-rock|jazz|latin|reggae|metal|punk|swing|shuffle|r&b|soul|world|hip hop|disco|dance|folk)/i;
+
+/**
+ * ChordPro's {subtitle} is often used for more than the artist. Seen in real OnSong exports:
+ * "Dolly Parton", "Oldie 5 156" (BeatBuddy style, song, tempo), "120" (tempo), "capo 5 (with kendra)",
+ * "Written by: …", "(Written By Jon Ims; as performed by Trisha Yearwood)", "6/8", "F#m", "Chubby Checker  1960".
+ */
+export function classifySubtitle(raw: string): Partial<ImportedChart["meta"]> {
+  const v = raw.trim();
+  if (!v || /^[-._\s]+$/.test(v)) return {};
+  if (/^\d+$/.test(v)) {
+    const n = Number(v);
+    return n >= 40 && n <= 250 ? { tempo: n } : { notes: v };
+  }
+  if (/^\d{1,2}\/\d{1,2}$/.test(v)) return { time: v };
+  if (/^[A-G][#b]?m?$/.test(v)) return { key: v };
+  if (/capo|tuning|drop \d|remember|step|half|whole/i.test(v)) return { notes: v };
+  const bb = /^([A-Za-z][A-Za-z0-9&/\- ]*?)\s+(\d{1,2})(?:\s+(\d{2,3}))?$/.exec(v);
+  if (bb && BEAT_STYLES.test(bb[1])) {
+    // "Style song tempo", or "Style tempo" when the lone number is too big to be a song slot
+    const loneTempo = !bb[3] && Number(bb[2]) >= 40;
+    const tempo = bb[3] ? Number(bb[3]) : loneTempo ? Number(bb[2]) : undefined;
+    const slot = loneTempo ? "" : ` ${bb[2]}`;
+    return { notes: `BeatBuddy: ${bb[1]}${slot}${tempo ? ` · ${tempo} bpm` : ""}`, ...(tempo ? { tempo } : {}) };
+  }
+  const performed = /performed by\s+([^;)]+)/i.exec(v);
+  if (performed) return { artist: performed[1].trim() };
+  const credit = /^(?:\(?\s*)?(?:arranged by|written by|words (?:&|and) music by|music by|by)\s*:?\s*(.+?)\)?$/i.exec(v);
+  if (credit) return { artist: credit[1].trim() };
+  const withYear = /^(.*?\S)\s+((?:19|20)\d{2})$/.exec(v);
+  if (withYear) return { artist: withYear[1], year: Number(withYear[2]) };
+  return { artist: v };
+}
+
+/** Split a multi-song ChordPro file (OnSong "All Songs" exports use {new_song} between songs). */
+export function splitSongs(text: string): string[] {
+  const parts = text.replace(/\r\n?/g, "\n").split(/^\s*\{(?:new_song|ns)\}\s*$/im);
+  return parts.map((p) => p.trim()).filter((p) => p.length > 0);
+}
+
+/** "goodbye earl" -> "Goodbye Earl"; titles with any capitals are left alone. */
+export function tidyTitle(title: string): string {
+  if (title !== title.toLowerCase()) return title;
+  const small = new Set(["a", "an", "and", "the", "of", "in", "on", "to", "for", "at", "by", "or"]);
+  return title.replace(/\S+/g, (w, i: number) => (i > 0 && small.has(w) ? w : w[0].toUpperCase() + w.slice(1)));
 }
 
 /** "[am]" -> "Am", "(G)" -> "G". Returns null if the token is not a chord. */
@@ -148,6 +197,14 @@ export function importChart(input: string, filename = ""): ImportedChart {
     .split("\n")
     .filter((line) => {
       const d = /^\s*\{\s*([a-z_]+)\s*:\s*(.*?)\s*\}\s*$/i.exec(line);
+      if (d && !line.trim().startsWith("{{") && /^(st|subtitle)$/i.test(d[1])) {
+        const c = classifySubtitle(d[2]);
+        for (const [k, val] of Object.entries(c)) {
+          if (k === "notes") meta.notes = meta.notes ? `${meta.notes}\n${val}` : String(val);
+          else if (meta[k as keyof ImportedChart["meta"]] === undefined) (meta as Record<string, unknown>)[k] = val;
+        }
+        return false;
+      }
       if (d && !line.trim().startsWith("{{")) {
         const key = DIRECTIVE_META[d[1].toLowerCase()];
         if (key) {
@@ -236,7 +293,14 @@ export function importChart(input: string, filename = ""): ImportedChart {
       continue;
     }
 
-    out.push(normalizeInlineChords(line));
+    if (/^(no capo.*|capo\s*\d+.*|capo on .*)$/i.test(trimmed) && trimmed.length < 60) {
+      out.push(`{comment: ${trimmed}}`);
+      continue;
+    }
+
+    const inline = normalizeInlineChords(line);
+    // Spaces that only lined chords up (OnSong/ChordPro exports) are noise once chords are inline
+    out.push(/\[[^\]]+\]/.test(inline) ? (/^\s*/.exec(inline)![0] + inline.trim().replace(/ {2,}/g, " ")) : inline);
   }
   if (inTab) out.push("{end_of_tab}");
   closeSection();

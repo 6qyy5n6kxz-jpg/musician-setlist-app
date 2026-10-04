@@ -165,3 +165,38 @@ describe("Ultimate Guitar capo", () => {
     expect(importChart("{capo: 2}\n\n[Em]Today").body).toBe("[Em]Today");
   });
 });
+
+import { classifySubtitle, splitSongs, tidyTitle } from "./convert";
+describe("OnSong library exports", () => {
+  it("splits {new_song} files", () => {
+    expect(splitSongs("{new_song}\r\n{title:A}\r\n[C]x\r\n{new_song}\r\n{title:B}\r\ny")).toEqual(["{title:A}\n[C]x", "{title:B}\ny"]);
+  });
+  it("reads what people actually put in {subtitle}", () => {
+    expect(classifySubtitle("Dolly Parton")).toEqual({ artist: "Dolly Parton" });
+    expect(classifySubtitle("Oldie 5 156")).toEqual({ notes: "BeatBuddy: Oldie 5 · 156 bpm", tempo: 156 });
+    expect(classifySubtitle("Pop-Rock Str8 76")).toEqual({ notes: "BeatBuddy: Pop-Rock Str8 · 76 bpm", tempo: 76 });
+    expect(classifySubtitle("Brushes 1")).toEqual({ notes: "BeatBuddy: Brushes 1" });
+    expect(classifySubtitle("Ballad 3")).toEqual({ notes: "BeatBuddy: Ballad 3" });
+    expect(classifySubtitle("120")).toEqual({ tempo: 120 });
+    expect(classifySubtitle("capo 5 (with kendra)")).toEqual({ notes: "capo 5 (with kendra)" });
+    expect(classifySubtitle("(Written By Jon Ims; as performed by Trisha Yearwood)")).toEqual({ artist: "Trisha Yearwood" });
+    expect(classifySubtitle("Words & Music by: Dan Fogelberg")).toEqual({ artist: "Dan Fogelberg" });
+    expect(classifySubtitle("Chubby Checker  1960")).toEqual({ artist: "Chubby Checker", year: 1960 });
+    expect(classifySubtitle("6/8")).toEqual({ time: "6/8" });
+    expect(classifySubtitle("F#m")).toEqual({ key: "F#m" });
+    expect(classifySubtitle("----.......")).toEqual({});
+  });
+  it("imports a chart from an OnSong export", () => {
+    const { meta, body } = importChart("{title:9 To 5}\n{subtitle:Dolly Parton}\n{key:B}\n{tempo:102}\n\nVerse 1\n[B]Tumble out of bed and I [E]stumble    to the kitchen\nCapo 3\n\nGuitar Solo\n[B] [E]");
+    expect(meta).toMatchObject({ title: "9 To 5", artist: "Dolly Parton", key: "B", tempo: 102 });
+    expect(body).toContain("[B]Tumble out of bed and I [E]stumble to the kitchen");
+    expect(body).toContain("{comment: Capo 3}");
+    expect(body).toContain("{start_of_solo: Guitar Solo}");
+  });
+  it("tidies all-lowercase titles only", () => {
+    expect(tidyTitle("goodbye earl")).toBe("Goodbye Earl");
+    expect(tidyTitle("breakfast at tiffany’s")).toBe("Breakfast at Tiffany’s");
+    expect(tidyTitle("1979")).toBe("1979");
+    expect(tidyTitle("Fast car")).toBe("Fast car");
+  });
+});

@@ -4,7 +4,7 @@ import { ChartView } from "../components/ChartView";
 import { IconBack } from "../components/Icons";
 import { useSyncStatus } from "../lib/sync";
 import { addSongFile, blankSong, db, live, saveRow, type Setlist, type SetlistItem, type Song } from "../lib/db";
-import { importChart, parseDuration } from "../lib/music/convert";
+import { importChart, parseDuration, splitSongs, tidyTitle } from "../lib/music/convert";
 import { expandZips } from "../lib/zipImport";
 import { guessKey } from "../lib/music/chords";
 import { allChords, parseChordPro } from "../lib/music/chordpro";
@@ -17,6 +17,8 @@ interface Candidate {
   duplicateOf?: string;
   /** The existing song has no chart, so this import fills it in (keeps its setlists, tags, etc.). */
   fillsChart?: boolean;
+  /** "Crazy — Patsy Cline": which existing song this matched, so wrong title matches are easy to spot. */
+  matchLabel?: string;
   include: boolean;
 }
 
@@ -33,9 +35,15 @@ const norm = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").t
 function songFromText(text: string, filename: string): Song {
   const { meta, body } = importChart(text, filename);
   const fallbackTitle = filename.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+  let title = (meta.title || fallbackTitle || "Untitled").trim();
+  let artist = meta.artist || "";
+  // "Kelsea Ballerini - Homecoming Queen - Pro" (Ultimate Guitar Pro titles saved into OnSong)
+  const proTitle = /^(.+?)\s+-\s+(.+?)\s+-\s+Pro$/i.exec(title);
+  if (proTitle) { artist ||= proTitle[1]; title = proTitle[2]; }
   return blankSong({
-    title: meta.title || fallbackTitle || "Untitled",
-    artist: meta.artist || "",
+    title: tidyTitle(title),
+    artist,
+    notes: meta.notes ?? null,
     // The chart decides the written key: its {key}, else the chords themselves.
     song_key: meta.key || guessKey(allChords(parseChordPro(body))),
     tempo: meta.tempo ?? null,
@@ -149,7 +157,7 @@ export function ImportPage() {
       const sameTitle = byTitle.get(norm(c.song.title));
       const dup = byKey.get(norm(c.song.title) + "|" + norm(c.song.artist)) ?? (sameTitle?.length === 1 ? sameTitle[0] : undefined);
       const fillsChart = !!dup && !dup.content.trim() && !!c.song.content.trim();
-      return { ...c, duplicateOf: dup?.id, fillsChart, include: !dup || fillsChart };
+      return { ...c, duplicateOf: dup?.id, fillsChart, matchLabel: dup ? `${dup.title}${dup.artist ? ` — ${dup.artist}` : ""}` : undefined, include: !dup || fillsChart };
     });
   };
 
@@ -186,8 +194,11 @@ export function ImportPage() {
         songsFromCsv(text).forEach((s) => list.push({ key: s.id, song: s, source: f.name, include: true }));
         continue;
       }
-      const s = songFromText(text, f.name);
-      list.push({ key: s.id, song: s, source: f.name, include: true });
+      const parts = splitSongs(text);
+      for (const part of parts.length ? parts : [text]) {
+        const s = songFromText(part, parts.length > 1 ? "" : f.name);
+        list.push({ key: s.id, song: s, source: f.name, include: true });
+      }
     }
     setCandidates(await markDuplicates([...candidates, ...list]));
   };
@@ -212,6 +223,8 @@ export function ImportPage() {
           song_key: c.song.content ? c.song.song_key ?? old.song_key : old.song_key,
           capo: c.song.content ? c.song.capo : old.capo,
           tempo: old.tempo ?? c.song.tempo,
+          notes: old.notes ?? c.song.notes,
+          artist: old.artist || c.song.artist,
           time_signature: old.time_signature ?? c.song.time_signature,
           duration_sec: old.duration_sec ?? c.song.duration_sec,
           flow: old.flow ?? c.song.flow,
@@ -280,8 +293,8 @@ export function ImportPage() {
                   <div className="small dim">
                     {c.song.artist || "Unknown artist"}{c.song.song_key ? ` · ${c.song.song_key}` : ""} · {c.source}
                     {c.file ? " · PDF attached" : c.song.content ? ` · ${c.song.content.split("\n").length} lines` : " · no chart"}
-                    {c.fillsChart && <span className="chip accent" style={{ marginLeft: 6 }}>adds the chart to your existing song</span>}
-                    {c.duplicateOf && !c.fillsChart && <span className="chip accent" style={{ marginLeft: 6 }}>already in library — check to replace its chart</span>}
+                    {c.fillsChart && <span className="chip accent" style={{ marginLeft: 6 }}>adds the chart to “{c.matchLabel}”</span>}
+                    {c.duplicateOf && !c.fillsChart && <span className="chip accent" style={{ marginLeft: 6 }}>“{c.matchLabel}” already has a chart — check to replace it</span>}
                   </div>
                 </div>
               </li>
