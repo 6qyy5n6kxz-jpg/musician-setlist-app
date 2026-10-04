@@ -1,3 +1,4 @@
+import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ChartView } from "../components/ChartView";
@@ -34,6 +35,7 @@ export function SongEditor() {
   const textRef = useRef<HTMLTextAreaElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const files = useSongFiles(id);
+  const failedFiles = useLiveQuery(async () => new Set((await db.blobs.toArray()).filter((b) => b.failed).map((b) => b.id)), []);
   const profile = useProfile();
   const allSongs = useSongs();
   const gearHistory = useMemo(
@@ -246,7 +248,12 @@ export function SongEditor() {
                 {f.kind === "audio" ? <IconMusic /> : <IconFile />}
                 <div className="grow">
                   <div className="truncate">{f.name}</div>
-                  <div className="small dim">{f.kind} · {f.size ? `${(f.size / 1048576).toFixed(1)} MB` : ""} {f.storage_path ? "· synced" : "· waiting to upload"}</div>
+                  <div className="small dim">
+                    {f.kind} · {f.size ? `${(f.size / 1048576).toFixed(1)} MB` : ""}{" "}
+                    {failedFiles?.has(f.id)
+                      ? <span style={{ color: "var(--danger)" }}>· upload failed — remove it and attach the file again</span>
+                      : f.storage_path ? "· synced" : "· waiting to upload"}
+                  </div>
                 </div>
                 <button className="btn small danger" onClick={() => softDelete(db.song_files, f.id)} aria-label="Remove attachment"><IconTrash size={18} /></button>
               </li>

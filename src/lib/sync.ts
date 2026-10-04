@@ -112,13 +112,19 @@ export async function syncNow(): Promise<void> {
   running = true;
   setStatus({ phase: "syncing", error: null });
   try {
-    await uploadBlobs(session.user.id);
+    // Songs/setlists first: an attachment problem must never hold up the rest of the library.
     for (const t of SYNC_TABLES) await pushTable(t);
+    const fileErrors = await uploadBlobs(session.user.id);
     await pushProfile();
     for (const t of SYNC_TABLES) await pullTable(t);
     await pullProfile(session.user.id);
     await downloadBlobs();
-    setStatus({ phase: "idle", lastSynced: new Date().toISOString(), pending: await countPending() });
+    setStatus({
+      phase: fileErrors.length ? "error" : "idle",
+      error: fileErrors.length ? `Couldn't upload: ${fileErrors.join(", ")} — remove and attach again` : null,
+      lastSynced: new Date().toISOString(),
+      pending: await countPending(),
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     setStatus({ phase: navigator.onLine ? "error" : "offline", error: msg });
@@ -210,23 +216,43 @@ async function pullProfile(userId: string) {
   });
 }
 
-async function uploadBlobs(userId: string) {
+/** Upload pending attachments one by one. Returns names of files that failed (others still upload). */
+async function uploadBlobs(userId: string): Promise<string[]> {
   const pending = await db.blobs.where("dirty").equals(1).toArray();
+  const failed: string[] = [];
+  let uploaded = 0;
   for (const b of pending) {
     const file = await db.song_files.get(b.id);
     if (!file || file.deleted_at) {
       await db.blobs.update(b.id, { dirty: 0 });
       continue;
     }
+    // A stored file that reads back empty can never upload — flag it instead of retrying forever.
+    let size = 0;
+    try {
+      size = (await b.blob.arrayBuffer()).byteLength;
+    } catch {
+      size = 0;
+    }
+    if (!size) {
+      await db.blobs.update(b.id, { dirty: 0, failed: "The saved copy of this file is empty." });
+      failed.push(file.name);
+      continue;
+    }
     const path = `${userId}/${file.id}`;
     const { error } = await supabase.storage
       .from(FILE_BUCKET)
       .upload(path, b.blob, { upsert: true, contentType: file.mime ?? undefined });
-    if (error) throw new Error(`upload ${file.name}: ${error.message}`);
-    await db.blobs.update(b.id, { dirty: 0 });
+    if (error) {
+      failed.push(file.name); // network or server trouble: leave it pending and try next sync
+      continue;
+    }
+    await db.blobs.update(b.id, { dirty: 0, failed: undefined });
     await db.song_files.put({ ...file, storage_path: path, updated_at: new Date().toISOString(), dirty: 1 });
+    uploaded++;
   }
-  if (pending.length) await pushTable("song_files");
+  if (uploaded) await pushTable("song_files");
+  return failed;
 }
 
 /** Keep every chart PDF and backing track on the device so gigs work offline. */

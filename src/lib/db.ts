@@ -130,6 +130,8 @@ export interface StoredBlob {
   blob: Blob;
   /** 1 = needs uploading to storage */
   dirty: 0 | 1;
+  /** Upload failed for good (e.g. the stored file read back empty) — needs re-attaching. */
+  failed?: string;
 }
 
 export interface KV {
@@ -245,9 +247,13 @@ export async function addSongFile(songId: string, file: File): Promise<SongFile>
   const row: SongFile = {
     ...baseRow(), song_id: songId, kind, name: file.name, mime: file.type || null, size: file.size, storage_path: null,
   };
+  // Store a copy of the bytes, not the picked File: iPad Safari can hand back a File from the Files
+  // app that later reads as empty once the picker's temporary copy is cleaned up.
+  const bytes = await file.arrayBuffer();
+  const blob = new Blob([bytes], { type: file.type || "application/octet-stream" });
   await db.transaction("rw", db.song_files, db.blobs, async () => {
-    await db.song_files.put(row);
-    await db.blobs.put({ id: row.id, blob: file, dirty: 1 });
+    await db.song_files.put({ ...row, size: bytes.byteLength });
+    await db.blobs.put({ id: row.id, blob, dirty: 1 });
   });
   notify();
   return row;
