@@ -79,6 +79,74 @@ export function PdfView({ blob, annotations, onAnnotationsChange }: Props) {
   };
 
   const total = countMarks(annotations);
+  const [clefMode, setClefMode] = useState<"treble" | "bass" | "grand">(() => {
+    try { return (localStorage.getItem("ledger-clef") as "treble" | "bass" | "grand") || "treble"; } catch { return "treble"; }
+  });
+  const [labeling, setLabeling] = useState<string | null>(null);
+  const autoCount = Object.values(annotations?.pages ?? {}).flat().filter((m) => m.t === "text" && m.auto).length;
+
+  /** Reading help: find notes on ledger lines and add their names as labels. */
+  const nameLedgerNotes = async () => {
+    if (!doc || !onAnnotationsChange) return;
+    try { localStorage.setItem("ledger-clef", clefMode); } catch { /* ignore */ }
+    setLabeling("Reading the music…");
+    const { toDark, findStaves, findLedgerNotes, noteName, clefsFor } = await import("../lib/omr");
+    let next: PdfAnnotations = current.current;
+    let labeled = 0, pagesWith = 0, staffCount = 0;
+    for (const p of pages) {
+      const page = await doc.getPage(p.num);
+      const base = page.getViewport({ scale: 1 });
+      const scale = 2000 / base.width; // enough resolution to measure staff lines reliably
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // "print" intent renders without requestAnimationFrame, so it finishes even if the app is backgrounded
+      await page.render({ canvas, viewport, intent: "print" }).promise;
+      const img = toDark(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
+      const staves = findStaves(img);
+      staffCount += staves.length;
+      const clefs = clefsFor(staves.length, clefMode);
+      const notes = findLedgerNotes(img, staves);
+      const W = canvas.width, H = canvas.height;
+      const labels: Mark[] = notes.map((n) => {
+        const s = staves[n.staffIndex].space;
+        const name = noteName(n.step, clefs[n.staffIndex]);
+        const above = n.step > 4;
+        return {
+          t: "text", auto: true, color: "#1e63d6", text: name, size: (s * 1.25) / W,
+          x: (n.x - s * 0.35) / W,
+          y: (above ? n.y - s * 1.1 : n.y + s * 2.1) / H,
+        };
+      });
+      const kept = pageMarks(next, p.num).filter((m) => !(m.t === "text" && m.auto));
+      next = withPageMarks(next, p.num, [...kept, ...labels]);
+      labeled += labels.length;
+      if (labels.length) pagesWith++;
+      canvas.width = canvas.height = 0; // free memory on iPad
+    }
+    setHistory((h) => [...h.slice(-49), current.current]);
+    onAnnotationsChange(next);
+    setLabeling(
+      labeled
+        ? `Named ${labeled} ledger note${labeled === 1 ? "" : "s"} on ${pagesWith} page${pagesWith === 1 ? "" : "s"}. Erase any that are wrong.`
+        : staffCount
+          ? "Found the staves but no notes on ledger lines."
+          : "No music staves found — this works on computer-made sheet music (e.g. Ultimate Guitar Pro), not chord charts or photos.",
+    );
+  };
+
+  const removeAuto = () => {
+    if (!onAnnotationsChange) return;
+    let next: PdfAnnotations = current.current;
+    for (const p of pages) next = withPageMarks(next, p.num, pageMarks(next, p.num).filter((m) => !(m.t === "text" && m.auto)));
+    setHistory((h) => [...h.slice(-49), current.current]);
+    onAnnotationsChange(next);
+    setLabeling(null);
+  };
   const toolBtn = (active: boolean) => `btn small ${active ? "on" : ""}`;
 
   return (
@@ -86,7 +154,18 @@ export function PdfView({ blob, annotations, onAnnotationsChange }: Props) {
       {onAnnotationsChange && (
         <div className="pdf-toolbar no-print">
           {!annotating ? (
-            <button className="btn small" onClick={() => setAnnotating(true)}>✎ Annotate{total ? ` (${total})` : ""}</button>
+            <>
+              <button className="btn small" onClick={() => setAnnotating(true)}>✎ Annotate{total ? ` (${total})` : ""}</button>
+              <button className="btn small" onClick={nameLedgerNotes} disabled={!doc || labeling === "Reading the music…"} title="Label notes on ledger lines with their names">♪ Name ledger notes</button>
+              <select className="select" style={{ width: "auto", minHeight: 34, padding: "0 8px" }} value={clefMode}
+                onChange={(e) => setClefMode(e.target.value as "treble" | "bass" | "grand")} aria-label="Clef">
+                <option value="treble">Treble</option>
+                <option value="bass">Bass</option>
+                <option value="grand">Grand staff</option>
+              </select>
+              {autoCount > 0 && <button className="btn small ghost" onClick={removeAuto}>Remove note labels</button>}
+              {labeling && <span className="small dim" style={{ flexBasis: "100%" }}>{labeling}</span>}
+            </>
           ) : (
             <>
               {PEN_COLORS.map((c) => (

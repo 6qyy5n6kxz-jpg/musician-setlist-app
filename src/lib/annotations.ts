@@ -20,6 +20,8 @@ export type TextMark = {
   /** Font size as a fraction of page width. */
   size: number;
   text: string;
+  /** Added automatically (e.g. ledger-note names) — can be removed as a group. */
+  auto?: boolean;
 };
 
 export type Mark = InkMark | TextMark;
