@@ -62,7 +62,7 @@ describe("ledger-note reading help", () => {
   });
 });
 
-import { integral, pairedStaves, placeLabel } from "./omr";
+import { groupChords, integral, pairedStaves, placeLabel } from "./omr";
 describe("label quality", () => {
   function blank(w = 700, h = 420) {
     const dark = new Uint8Array(w * h);
@@ -111,5 +111,28 @@ describe("label quality", () => {
     expect(first.y0).toBeGreaterThan(note.y); // went below instead of onto the ink above
     const second = placeLabel(ii, img, { ...note, x: 202 }, s, "C", placed);
     expect(second.x0 === first.x0 && second.y0 === first.y0).toBe(false); // not stacked on the first
+  });
+});
+
+describe("chords", () => {
+  it("groups stacked ledger notes into one chord, ordered top to bottom", () => {
+    const staves = [{ lines: [100, 114, 128, 142, 156], space: 14, x0: 0, x1: 800 }];
+    const notes = [
+      { x: 300, y: 184, step: -4, staffIndex: 0, score: 1 }, // A3
+      { x: 301, y: 170, step: -2, staffIndex: 0, score: 1 }, // C4
+      { x: 314, y: 198, step: -6, staffIndex: 0, score: 1 }, // F3 (offset second)
+      { x: 420, y: 170, step: -2, staffIndex: 0, score: 1 }, // a separate note later in the bar
+      { x: 300, y: 72, step: 12, staffIndex: 0, score: 1 },  // above the staff: its own group
+    ];
+    const groups = groupChords(notes, staves);
+    const steps = groups.map((g) => g.map((n) => n.step));
+    expect(steps).toHaveLength(3);
+    expect(steps).toEqual(expect.arrayContaining([[12], [-2, -4, -6], [-2]]));
+  });
+  it("sizes a label column for the whole chord", () => {
+    const img = { w: 600, h: 400, dark: new Uint8Array(600 * 400) };
+    const chord = [{ x: 200, y: 200, step: -2, staffIndex: 0, score: 1 }, { x: 200, y: 214, step: -4, staffIndex: 0, score: 1 }];
+    const box = placeLabel(integral(img), img, chord, 14, ["C", "A"], []);
+    expect(box.y1 - box.y0).toBeGreaterThan(box.fontPx * 1.5); // two lines tall
   });
 });

@@ -288,24 +288,52 @@ export interface LabelBox {
 }
 
 /**
- * Find a spot for a note's label that covers as little ink as possible (notes, lyrics, markings)
- * and doesn't overlap labels already placed. Returns the text box in page pixels.
+ * Group ledger notes stacked in the same chord (same staff, same side of it, horizontally aligned —
+ * seconds sit about a head-width apart) so each chord gets one column of names instead of a scatter.
+ * Each group is ordered top to bottom.
+ */
+export function groupChords(notes: FoundNote[], staves: Staff[]): FoundNote[][] {
+  const groups: FoundNote[][] = [];
+  const sorted = [...notes].sort((a, b) => a.staffIndex - b.staffIndex || a.x - b.x);
+  for (const n of sorted) {
+    const s = staves[n.staffIndex].space;
+    const side = n.step > 4;
+    const g = groups.find((grp) => grp[0].staffIndex === n.staffIndex && (grp[0].step > 4) === side &&
+      grp.some((m) => Math.abs(m.x - n.x) <= s * 1.3));
+    if (g) g.push(n);
+    else groups.push([n]);
+  }
+  for (const g of groups) g.sort((a, b) => a.y - b.y);
+  return groups;
+}
+
+/**
+ * Find a spot for a column of names (one per line) beside a chord or note: covers as little ink as
+ * possible (notes, lyrics, markings) and doesn't overlap labels already placed. Box in page pixels.
  */
 export function placeLabel(
-  ii: Uint32Array, img: DarkImage, note: FoundNote, space: number, text: string, placed: LabelBox[],
-): LabelBox & { fontPx: number } {
+  ii: Uint32Array, img: DarkImage, group: FoundNote | FoundNote[], space: number, texts: string | string[], placed: LabelBox[],
+): LabelBox & { fontPx: number; lineGap: number } {
+  const notes = Array.isArray(group) ? group : [group];
+  const lines = Array.isArray(texts) ? texts : [texts];
   const f = space * 1.05; // font size
-  const w = f * 0.62 * text.length + 2, h = f * 0.82;
-  const { x: cx, y: cy } = note;
-  const high = note.step > 4;
+  const lineGap = f * 0.95;
+  const w = f * 0.62 * Math.max(...lines.map((t) => t.length)) + 2;
+  const h = f * 0.82 + (lines.length - 1) * lineGap;
+  const cx = notes.reduce((t, n) => t + n.x, 0) / notes.length;
+  const top = Math.min(...notes.map((n) => n.y)), bottom = Math.max(...notes.map((n) => n.y));
+  const mid = (top + bottom) / 2;
+  const high = notes[0].step > 4;
   const near = space * 0.62;
+  // Beside the chord, a column lines up with the notes; above/below suits single notes best
+  const single = notes.length === 1;
   const candidates: { box: LabelBox; bias: number }[] = [
-    { box: { x0: cx - w / 2, y0: cy - near - h, x1: cx + w / 2, y1: cy - near }, bias: high ? 0 : 0.03 },
-    { box: { x0: cx - w / 2, y0: cy + near, x1: cx + w / 2, y1: cy + near + h }, bias: high ? 0.03 : 0 },
-    { box: { x0: cx - space * 0.8 - w, y0: cy - h / 2, x1: cx - space * 0.8, y1: cy + h / 2 }, bias: 0.04 },
-    { box: { x0: cx + space * 0.9, y0: cy - h / 2, x1: cx + space * 0.9 + w, y1: cy + h / 2 }, bias: 0.05 },
-    { box: { x0: cx - w / 2, y0: cy - near - h - space * 0.8, x1: cx + w / 2, y1: cy - near - space * 0.8 }, bias: 0.06 },
-    { box: { x0: cx - w / 2, y0: cy + near + space * 0.8, x1: cx + w / 2, y1: cy + near + h + space * 0.8 }, bias: 0.06 },
+    { box: { x0: cx - w / 2, y0: top - near - h, x1: cx + w / 2, y1: top - near }, bias: (high ? 0 : 0.03) + (single ? 0 : 0.04) },
+    { box: { x0: cx - w / 2, y0: bottom + near, x1: cx + w / 2, y1: bottom + near + h }, bias: (high ? 0.03 : 0) + (single ? 0 : 0.04) },
+    { box: { x0: cx - space * 0.85 - w, y0: mid - h / 2, x1: cx - space * 0.85, y1: mid + h / 2 }, bias: single ? 0.04 : 0 },
+    { box: { x0: cx + space * 0.95, y0: mid - h / 2, x1: cx + space * 0.95 + w, y1: mid + h / 2 }, bias: single ? 0.05 : 0.01 },
+    { box: { x0: cx - w / 2, y0: top - near - h - space * 0.8, x1: cx + w / 2, y1: top - near - space * 0.8 }, bias: 0.06 },
+    { box: { x0: cx - w / 2, y0: bottom + near + space * 0.8, x1: cx + w / 2, y1: bottom + near + h + space * 0.8 }, bias: 0.06 },
   ];
   const overlap = (a: LabelBox, b: LabelBox) =>
     Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)) / ((a.x1 - a.x0) * (a.y1 - a.y0));
@@ -319,5 +347,5 @@ export function placeLabel(
     if (score < bestScore) { bestScore = score; best = b; }
   }
   placed.push(best);
-  return { ...best, fontPx: f };
+  return { ...best, fontPx: f, lineGap };
 }

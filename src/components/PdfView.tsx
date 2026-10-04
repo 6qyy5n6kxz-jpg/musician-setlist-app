@@ -90,7 +90,7 @@ export function PdfView({ blob, annotations, onAnnotationsChange }: Props) {
     if (!doc || !onAnnotationsChange) return;
     try { localStorage.setItem("ledger-clef-v2", clefMode); } catch { /* ignore */ }
     setLabeling("Reading the music…");
-    const { toDark, findStaves, findLedgerNotes, noteName, clefsFor, pairedStaves, placeLabel, integral } = await import("../lib/omr");
+    const { toDark, findStaves, findLedgerNotes, noteName, clefsFor, pairedStaves, placeLabel, integral, groupChords } = await import("../lib/omr");
     let next: PdfAnnotations = current.current;
     let labeled = 0, pagesWith = 0, staffCount = 0;
     for (const p of pages) {
@@ -114,16 +114,17 @@ export function PdfView({ blob, annotations, onAnnotationsChange }: Props) {
       const W = canvas.width, H = canvas.height;
       const ii = integral(img);
       const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
-      const labels: Mark[] = notes.map((n) => {
-        const name = noteName(n.step, clefs[n.staffIndex]);
-        // Put the name where it covers the least ink and doesn't sit on another label
-        const box = placeLabel(ii, img, n, staves[n.staffIndex].space, name, placed);
-        return {
+      // One column of names per chord (top to bottom, matching the notes), placed in the clearest spot
+      const labels: Mark[] = [];
+      for (const group of groupChords(notes, staves)) {
+        const names = group.map((n) => noteName(n.step, clefs[n.staffIndex]));
+        const box = placeLabel(ii, img, group, staves[group[0].staffIndex].space, names, placed);
+        names.forEach((name, i) => labels.push({
           t: "text", auto: true, color: "#1e63d6", text: name, size: box.fontPx / W,
           x: (box.x0 + 1) / W,
-          y: (box.y1 - box.fontPx * 0.1) / H,
-        };
-      });
+          y: (box.y0 + box.fontPx * 0.78 + i * box.lineGap) / H,
+        }));
+      }
       const kept = pageMarks(next, p.num).filter((m) => !(m.t === "text" && m.auto));
       next = withPageMarks(next, p.num, [...kept, ...labels]);
       labeled += labels.length;
