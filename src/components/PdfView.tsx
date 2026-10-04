@@ -79,8 +79,8 @@ export function PdfView({ blob, annotations, onAnnotationsChange }: Props) {
   };
 
   const total = countMarks(annotations);
-  const [clefMode, setClefMode] = useState<"treble" | "bass" | "grand">(() => {
-    try { return (localStorage.getItem("ledger-clef") as "treble" | "bass" | "grand") || "treble"; } catch { return "treble"; }
+  const [clefMode, setClefMode] = useState<"auto" | "treble" | "bass" | "grand">(() => {
+    try { return (localStorage.getItem("ledger-clef-v2") as "auto" | "treble" | "bass" | "grand") || "auto"; } catch { return "auto"; }
   });
   const [labeling, setLabeling] = useState<string | null>(null);
   const autoCount = Object.values(annotations?.pages ?? {}).flat().filter((m) => m.t === "text" && m.auto).length;
@@ -88,9 +88,9 @@ export function PdfView({ blob, annotations, onAnnotationsChange }: Props) {
   /** Reading help: find notes on ledger lines and add their names as labels. */
   const nameLedgerNotes = async () => {
     if (!doc || !onAnnotationsChange) return;
-    try { localStorage.setItem("ledger-clef", clefMode); } catch { /* ignore */ }
+    try { localStorage.setItem("ledger-clef-v2", clefMode); } catch { /* ignore */ }
     setLabeling("Reading the music…");
-    const { toDark, findStaves, findLedgerNotes, noteName, clefsFor } = await import("../lib/omr");
+    const { toDark, findStaves, findLedgerNotes, noteName, clefsFor, pairedStaves, placeLabel, integral } = await import("../lib/omr");
     let next: PdfAnnotations = current.current;
     let labeled = 0, pagesWith = 0, staffCount = 0;
     for (const p of pages) {
@@ -109,17 +109,19 @@ export function PdfView({ blob, annotations, onAnnotationsChange }: Props) {
       const img = toDark(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
       const staves = findStaves(img);
       staffCount += staves.length;
-      const clefs = clefsFor(staves.length, clefMode);
+      const clefs = clefsFor(staves.length, clefMode, pairedStaves(img, staves));
       const notes = findLedgerNotes(img, staves);
       const W = canvas.width, H = canvas.height;
+      const ii = integral(img);
+      const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
       const labels: Mark[] = notes.map((n) => {
-        const s = staves[n.staffIndex].space;
         const name = noteName(n.step, clefs[n.staffIndex]);
-        const above = n.step > 4;
+        // Put the name where it covers the least ink and doesn't sit on another label
+        const box = placeLabel(ii, img, n, staves[n.staffIndex].space, name, placed);
         return {
-          t: "text", auto: true, color: "#1e63d6", text: name, size: (s * 1.25) / W,
-          x: (n.x - s * 0.35) / W,
-          y: (above ? n.y - s * 1.1 : n.y + s * 2.1) / H,
+          t: "text", auto: true, color: "#1e63d6", text: name, size: box.fontPx / W,
+          x: (box.x0 + 1) / W,
+          y: (box.y1 - box.fontPx * 0.1) / H,
         };
       });
       const kept = pageMarks(next, p.num).filter((m) => !(m.t === "text" && m.auto));
@@ -158,7 +160,8 @@ export function PdfView({ blob, annotations, onAnnotationsChange }: Props) {
               <button className="btn small" onClick={() => setAnnotating(true)}>✎ Annotate{total ? ` (${total})` : ""}</button>
               <button className="btn small" onClick={nameLedgerNotes} disabled={!doc || labeling === "Reading the music…"} title="Label notes on ledger lines with their names">♪ Name ledger notes</button>
               <select className="select" style={{ width: "auto", minHeight: 34, padding: "0 8px" }} value={clefMode}
-                onChange={(e) => setClefMode(e.target.value as "treble" | "bass" | "grand")} aria-label="Clef">
+                onChange={(e) => setClefMode(e.target.value as "auto" | "treble" | "bass" | "grand")} aria-label="Clef">
+                <option value="auto">Auto clef</option>
                 <option value="treble">Treble</option>
                 <option value="bass">Bass</option>
                 <option value="grand">Grand staff</option>

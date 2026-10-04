@@ -61,3 +61,55 @@ describe("ledger-note reading help", () => {
     expect(clefsFor(4, "grand")).toEqual(["treble", "bass", "treble", "bass"]);
   });
 });
+
+import { integral, pairedStaves, placeLabel } from "./omr";
+describe("label quality", () => {
+  function blank(w = 700, h = 420) {
+    const dark = new Uint8Array(w * h);
+    const rect = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = Math.round(y0); y <= Math.round(y1); y++) for (let x = Math.round(x0); x <= Math.round(x1); x++) dark[y * w + x] = 1;
+    };
+    const ellipse = (cx: number, cy: number, rx: number, ry: number) => {
+      for (let y = -ry; y <= ry; y++) for (let x = -rx; x <= rx; x++) if ((x * x) / (rx * rx) + (y * y) / (ry * ry) <= 1) dark[Math.round(cy + y) * w + Math.round(cx + x)] = 1;
+    };
+    return { w, h, dark, rect, ellipse };
+  }
+  it("gives a filled note just beyond a ledger line one name, not two", () => {
+    const b = blank();
+    const s = 14, top = 100;
+    for (let i = 0; i < 5; i++) b.rect(40, top + i * s, 660, top + i * s + 1);
+    const bottom = top + 4 * s + 0.5, yOf = (k: number) => bottom - (k * s) / 2;
+    b.rect(200 - 13, yOf(10) - 0.5, 200 + 13, yOf(10) + 0.5); // first ledger above
+    b.ellipse(200, yOf(11), 8, 6); // B5, filled, in the space above the ledger
+    b.rect(200 - 8, yOf(11), 200 - 7, yOf(11) + 3 * s); // stem down
+    const img = { w: b.w, h: b.h, dark: b.dark };
+    const notes = findLedgerNotes(img, findStaves(img));
+    expect(notes.map((n) => noteName(n.step, "treble"))).toEqual(["B"]);
+  });
+  it("recognises a piano grand staff by the line joining the staves", () => {
+    const b = blank();
+    const s = 12;
+    for (let i = 0; i < 5; i++) b.rect(40, 60 + i * s, 660, 61 + i * s);
+    for (let i = 0; i < 5; i++) b.rect(40, 200 + i * s, 660, 201 + i * s);
+    b.rect(40, 60, 41, 200 + 4 * s + 1); // system line joining both staves
+    const img = { w: b.w, h: b.h, dark: b.dark };
+    const staves = findStaves(img);
+    const paired = pairedStaves(img, staves);
+    expect(paired).toEqual([true, true]);
+    expect(clefsFor(2, "auto", paired)).toEqual(["treble", "bass"]);
+    expect(clefsFor(1, "auto", [false])).toEqual(["treble"]);
+  });
+  it("moves a label off ink and off other labels", () => {
+    const b = blank();
+    const s = 14;
+    b.rect(180, 60, 220, 92); // something (lyrics, a beam) right above the note
+    const img = { w: b.w, h: b.h, dark: b.dark };
+    const ii = integral(img);
+    const note = { x: 200, y: 110, step: 11, staffIndex: 0, score: 1 };
+    const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
+    const first = placeLabel(ii, img, note, s, "B", placed);
+    expect(first.y0).toBeGreaterThan(note.y); // went below instead of onto the ink above
+    const second = placeLabel(ii, img, { ...note, x: 202 }, s, "C", placed);
+    expect(second.x0 === first.x0 && second.y0 === first.y0).toBe(false); // not stacked on the first
+  });
+});

@@ -100,8 +100,9 @@ export function drawMarks(ctx: CanvasRenderingContext2D, marks: Mark[], w: numbe
       const size = Math.max(10, m.size * w);
       ctx.font = `600 ${size}px -apple-system, "Helvetica Neue", Arial, sans-serif`;
       ctx.fillStyle = m.color;
-      // White halo keeps notes readable over printed notation
-      ctx.lineWidth = Math.max(2, size * 0.18);
+      // White halo keeps notes readable over printed notation (thin for auto labels so it
+      // doesn't white-out nearby notation)
+      ctx.lineWidth = Math.max(m.auto ? 1.5 : 2, size * (m.auto ? 0.1 : 0.18));
       ctx.strokeStyle = "rgba(255,255,255,0.9)";
       ctx.lineJoin = "round";
       ctx.strokeText(m.text, m.x * w, m.y * h);

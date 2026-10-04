@@ -27,6 +27,8 @@ export interface FoundNote {
   /** Staff position: 0 = bottom line, 8 = top line, each step is a line or space. */
   step: number;
   staffIndex: number;
+  /** How notehead-like the match is (higher = more confident). */
+  score: number;
 }
 
 export function toDark(rgba: Uint8ClampedArray, w: number, h: number, threshold = 150): DarkImage {
@@ -143,8 +145,8 @@ function ledgerSegments(img: DarkImage, y: number, space: number, xa: number, xb
   return out;
 }
 
-/** Is there a notehead (filled or hollow) centred near (cx, cy)? Returns refined x or null. */
-function notehead(ii: Uint32Array, img: DarkImage, cx: number, cy: number, s: number, onLine: boolean): number | null {
+/** Is there a notehead (filled or hollow) centred near (cx, cy)? Returns refined x and a score. */
+function notehead(ii: Uint32Array, img: DarkImage, cx: number, cy: number, s: number, onLine: boolean): { x: number; score: number } | null {
   const hw = s * 0.5, hh = s * 0.38;
   let best: { x: number; score: number } | null = null;
   for (let dx = -s * 0.5; dx <= s * 0.5; dx += Math.max(1, s / 8)) {
@@ -167,7 +169,13 @@ function notehead(ii: Uint32Array, img: DarkImage, cx: number, cy: number, s: nu
     const score = filled ? full : 0.5 + (0.3 - inner);
     if (!best || score > best.score) best = { x, score };
   }
-  return best ? best.x : null;
+  if (!best) return null;
+  // Vertical fit: a head centred exactly here is darker in its middle band than half a step off
+  const hw2 = s * 0.4;
+  const centre = boxRatio(ii, img, best.x - hw2, cy - s * 0.18, best.x + hw2, cy + s * 0.18);
+  const offUp = boxRatio(ii, img, best.x - hw2, cy - s * 0.68, best.x + hw2, cy - s * 0.32);
+  const offDown = boxRatio(ii, img, best.x - hw2, cy + s * 0.32, best.x + hw2, cy + s * 0.68);
+  return { x: best.x, score: best.score + centre - Math.max(offUp, offDown) * 0.5 };
 }
 
 /**
@@ -199,22 +207,55 @@ export function findLedgerNotes(img: DarkImage, staves: Staff[], maxLedgers = 5)
         if (!segs.length) break;
         for (const g of segs) {
           const cx = (g.x0 + g.x1) / 2;
-          for (const k of [step, step + dir]) {
-            // A note on the next ledger out is found in the next round
-            const isLine = k === step;
-            const hx = notehead(ii, img, cx, yOf(k), s, isLine);
-            if (hx === null) continue;
-            if (!isLine && ledgerSegments(img, yOf(step + 2 * dir), s, cx - s, cx + s).length) continue;
-            if (!notes.some((p) => p.staffIndex === si && p.step === k && Math.abs(p.x - hx) < s * 0.7)) {
-              notes.push({ x: hx, y: yOf(k), step: k, staffIndex: si });
-            }
-          }
+          // The head is either ON this ledger or in the space just beyond it — never both.
+          const onLine = notehead(ii, img, cx, yOf(step), s, true);
+          const beyondOk = !ledgerSegments(img, yOf(step + 2 * dir), s, cx - s, cx + s).length;
+          const beyond = beyondOk ? notehead(ii, img, cx, yOf(step + dir), s, false) : null;
+          const pick = onLine && (!beyond || onLine.score >= beyond.score) ? { ...onLine, k: step } : beyond ? { ...beyond, k: step + dir } : null;
+          if (pick) notes.push({ x: pick.x, y: yOf(pick.k), step: pick.k, staffIndex: si, score: pick.score });
         }
         segsInner = segs;
       }
     }
   });
-  return notes;
+  return dedupe(notes, staves);
+}
+
+/** One label per notehead: drop matches of the same head at the same or an adjacent step. */
+function dedupe(notes: FoundNote[], staves: Staff[]): FoundNote[] {
+  const sorted = [...notes].sort((a, b) => b.score - a.score);
+  const kept: FoundNote[] = [];
+  for (const n of sorted) {
+    const s = staves[n.staffIndex].space;
+    // Seconds in a chord are drawn side by side (about a head width apart), so they survive this
+    const clash = kept.some((k) => k.staffIndex === n.staffIndex && Math.abs(k.step - n.step) <= 1 && Math.abs(k.x - n.x) < s * 0.6);
+    if (!clash) kept.push(n);
+  }
+  return kept.sort((a, b) => a.staffIndex - b.staffIndex || a.x - b.x);
+}
+
+/**
+ * Piano (grand staff) detection: two staves joined by a line down their left edge (the system
+ * barline / brace side) form a treble + bass pair.
+ */
+export function pairedStaves(img: DarkImage, staves: Staff[]): boolean[] {
+  const paired = staves.map(() => false);
+  for (let i = 0; i + 1 < staves.length; i++) {
+    if (paired[i]) continue;
+    const a = staves[i], b = staves[i + 1];
+    const y0 = Math.round(a.lines[0]), y1 = Math.round(b.lines[4]);
+    const gap = b.lines[0] - a.lines[4];
+    if (gap > a.space * 14) continue; // too far apart to be one system
+    const x0 = Math.min(a.x0, b.x0);
+    let joined = false;
+    for (let x = Math.max(0, Math.round(x0 - a.space * 1.5)); x <= Math.min(img.w - 1, Math.round(x0 + a.space * 1.5)) && !joined; x++) {
+      let dark = 0;
+      for (let y = y0; y <= y1; y++) dark += img.dark[y * img.w + x];
+      if (dark / (y1 - y0 + 1) > 0.92) joined = true;
+    }
+    if (joined) paired[i] = paired[i + 1] = true;
+  }
+  return paired;
 }
 
 const LETTERS = "CDEFGAB";
@@ -227,7 +268,56 @@ export function noteName(step: number, clef: Clef, withOctave = false): string {
   return withOctave ? `${letter}${Math.floor(idx / 7)}` : letter;
 }
 
-/** Clef for each staff: all treble/bass, or grand staff (alternating treble/bass in pairs). */
-export function clefsFor(staffCount: number, mode: "treble" | "bass" | "grand"): Clef[] {
+export type ClefMode = "auto" | "treble" | "bass" | "grand";
+
+/**
+ * Clef for each staff. "auto": staves joined into a piano pair are treble (top) + bass (bottom),
+ * single staves are treble. "grand": alternate treble/bass. Otherwise all the same.
+ */
+export function clefsFor(staffCount: number, mode: ClefMode, paired: boolean[] = []): Clef[] {
+  if (mode === "auto") {
+    const out: Clef[] = [];
+    for (let i = 0; i < staffCount; i++) out.push(paired[i] && i > 0 && paired[i - 1] && out[i - 1] === "treble" ? "bass" : "treble");
+    return out;
+  }
   return Array.from({ length: staffCount }, (_, i) => (mode === "grand" ? (i % 2 === 0 ? "treble" : "bass") : mode));
+}
+
+export interface LabelBox {
+  x0: number; y0: number; x1: number; y1: number;
+}
+
+/**
+ * Find a spot for a note's label that covers as little ink as possible (notes, lyrics, markings)
+ * and doesn't overlap labels already placed. Returns the text box in page pixels.
+ */
+export function placeLabel(
+  ii: Uint32Array, img: DarkImage, note: FoundNote, space: number, text: string, placed: LabelBox[],
+): LabelBox & { fontPx: number } {
+  const f = space * 1.05; // font size
+  const w = f * 0.62 * text.length + 2, h = f * 0.82;
+  const { x: cx, y: cy } = note;
+  const high = note.step > 4;
+  const near = space * 0.62;
+  const candidates: { box: LabelBox; bias: number }[] = [
+    { box: { x0: cx - w / 2, y0: cy - near - h, x1: cx + w / 2, y1: cy - near }, bias: high ? 0 : 0.03 },
+    { box: { x0: cx - w / 2, y0: cy + near, x1: cx + w / 2, y1: cy + near + h }, bias: high ? 0.03 : 0 },
+    { box: { x0: cx - space * 0.8 - w, y0: cy - h / 2, x1: cx - space * 0.8, y1: cy + h / 2 }, bias: 0.04 },
+    { box: { x0: cx + space * 0.9, y0: cy - h / 2, x1: cx + space * 0.9 + w, y1: cy + h / 2 }, bias: 0.05 },
+    { box: { x0: cx - w / 2, y0: cy - near - h - space * 0.8, x1: cx + w / 2, y1: cy - near - space * 0.8 }, bias: 0.06 },
+    { box: { x0: cx - w / 2, y0: cy + near + space * 0.8, x1: cx + w / 2, y1: cy + near + h + space * 0.8 }, bias: 0.06 },
+  ];
+  const overlap = (a: LabelBox, b: LabelBox) =>
+    Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)) / ((a.x1 - a.x0) * (a.y1 - a.y0));
+  let best = candidates[0].box, bestScore = Infinity;
+  for (const c of candidates) {
+    const b = c.box;
+    if (b.x0 < 0 || b.y0 < 0 || b.x1 > img.w || b.y1 > img.h) continue;
+    const ink = boxRatio(ii, img, b.x0, b.y0, b.x1, b.y1);
+    const clash = placed.reduce((m, p) => Math.max(m, overlap(b, p)), 0);
+    const score = ink + clash * 3 + c.bias;
+    if (score < bestScore) { bestScore = score; best = b; }
+  }
+  placed.push(best);
+  return { ...best, fontPx: f };
 }
