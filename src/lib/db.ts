@@ -55,6 +55,8 @@ export interface Setlist extends SyncFields {
   name: string;
   /** Which act this set is for (Profile.acts id). */
   act_id: string | null;
+  /** A permanent signature show: pinned, protected from deletion, duplicated for each gig. */
+  signature: boolean;
   event_date: string | null;
   venue: string | null;
   notes: string | null;
@@ -165,7 +167,7 @@ export function blankSong(partial: Partial<Song> = {}): Song {
 }
 
 export function blankSetlist(partial: Partial<Setlist> = {}): Setlist {
-  return { ...baseRow(), name: "", act_id: null, event_date: null, venue: null, notes: null, ...partial };
+  return { ...baseRow(), name: "", act_id: null, signature: false, event_date: null, venue: null, notes: null, ...partial };
 }
 
 export function blankItem(partial: Partial<SetlistItem> & { setlist_id: string }): SetlistItem {

@@ -83,6 +83,9 @@ export function SetlistEditor() {
         <input className="input grow" style={{ fontSize: "1.3rem", fontWeight: 700, maxWidth: 520 }} value={meta.name}
           onChange={(e) => saveMeta({ name: e.target.value })} aria-label="Setlist name" />
         <span className="spacer" />
+        <label className="check small" title="Signature shows stay pinned at the top and are protected from deletion">
+          <input type="checkbox" checked={meta.signature ?? false} onChange={(e) => saveMeta({ signature: e.target.checked })} /> ★ Signature show
+        </label>
         <button className="btn" onClick={() => window.print()}>Print</button>
         <Link className="btn primary" to={`/perform/${setlist.id}`}><IconPlay size={18} /> Perform</Link>
       </div>
