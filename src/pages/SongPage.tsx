@@ -1,4 +1,7 @@
+import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
+import { singerKey } from "../lib/gear";
+import { playStats } from "../lib/gigs";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { IconBack, IconEdit, IconPlay, IconSets } from "../components/Icons";
 import { SongStage } from "../components/SongStage";
@@ -15,6 +18,7 @@ export function SongPage() {
   const navigate = useNavigate();
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const stats = useLiveQuery(async () => (id ? (await playStats()).get(id) : undefined), [id]);
 
   if (song === undefined) return null;
   if (song === null || song.deleted_at) return <div className="page empty-state">Song not found. <Link to="/">Back to songs</Link></div>;
@@ -68,7 +72,13 @@ export function SongPage() {
         <Link className="btn small" to={`/perform/song/${song.id}`}><IconPlay size={18} /> Perform</Link>
         <Link className="btn small primary" to={`/song/${song.id}/edit`}><IconEdit size={18} /> Edit</Link>
       </div>
-      <SongStage song={song} onPerformKeyChange={setPendingKey} />
+      {stats && stats.count > 0 && (
+        <div className="small dim no-print" style={{ padding: "6px 20px 0" }}>
+          Played {stats.count} time{stats.count === 1 ? "" : "s"}{stats.requests ? ` (${stats.requests} by request)` : ""}
+          {stats.last ? ` · last on ${new Date(stats.last.date + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}${stats.last.venue ? ` at ${stats.last.venue}` : ""}` : ""}
+        </div>
+      )}
+      <SongStage song={song} performKey={singerKey(song)} onPerformKeyChange={setPendingKey} />
     </div>
   );
 }

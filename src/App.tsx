@@ -15,6 +15,7 @@ import { RequestsPage } from "./pages/RequestsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { GigCheck } from "./pages/GigCheck";
 import { TuneUp } from "./pages/TuneUp";
+import { GigDetail, GigLog } from "./pages/GigLog";
 import { PublicRequest } from "./pages/public/PublicRequest";
 import { LyricsDisplay } from "./pages/public/LyricsDisplay";
 import { BandFollow } from "./pages/public/BandFollow";
@@ -44,6 +45,8 @@ export function App() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/gigcheck" element={<GigCheck />} />
             <Route path="/tuneup" element={<TuneUp />} />
+            <Route path="/gigs" element={<GigLog />} />
+            <Route path="/gigs/:id" element={<GigDetail />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

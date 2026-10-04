@@ -10,6 +10,9 @@ import { allChords, lyricSlides, parseChordPro, type Section } from "../lib/musi
 import { describeRequest, karaokeLineup, openQueue, useRequests, type SongRequest } from "../lib/requests";
 import { KaraokePanel } from "../components/KaraokePanel";
 import { GearStrip } from "../components/GearUI";
+import { DEFAULT_MIDI, singerKey, songMidiMessages } from "../lib/gear";
+import { sendMidi } from "../lib/midi";
+import { ensureGig, logPlayed } from "../lib/gigs";
 import { useSettings } from "../lib/settings";
 import { useSyncStatus } from "../lib/sync";
 import { useWakeLock } from "../lib/stage";
@@ -60,7 +63,8 @@ export function Perform() {
   // ------------------------------------------------------------ live broadcast
   const liveEnabled = !!userEmail && !!profile?.live_token;
   const publish = useLivePublisher(profile?.live_token, liveEnabled);
-  const performKey = extra ? null : item?.key_override ?? null;
+  // Setlist override first, then the lead singer's key, then the written key
+  const performKey = (extra ? null : item?.key_override) ?? (song ? singerKey(song) : null) ?? null;
 
   const publishSong = useCallback(() => {
     if (!song) return;
@@ -113,6 +117,7 @@ export function Perform() {
     void setStatus(r.id, "played");
     setDrawer(null);
     if (!s) return;
+    fromRequest.current.add(s.id);
     const at = playable.findIndex((p) => p.song_id === s.id);
     if (at >= 0) go(at);
     else setExtra(s);
@@ -128,6 +133,31 @@ export function Perform() {
     }));
     void setStatus(r.id, "queued");
   };
+
+  // ------------------------------------------------------------ MIDI out (where the browser supports it)
+  const [midiNote, setMidiNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!song || !settings.midiOut) return;
+    const lib = profile?.gear_library ?? {};
+    const msgs = songMidiMessages(song.gear ?? {}, lib, { ...DEFAULT_MIDI, ...(lib.midi ?? {}) }, song.instrument ?? null);
+    void sendMidi(msgs).then((n) => setMidiNote(n ? `MIDI sent: ${msgs.map((m) => m.describe).filter((d) => !d.includes("bank MSB")).join(" · ")}` : null));
+  }, [song?.id, settings.midiOut]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ------------------------------------------------------------ gig log
+  // A song counts as played once it has been on screen for 45 seconds.
+  const gigId = useRef<string | null>(null);
+  const fromRequest = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!setlist) return;
+    void ensureGig(setlist, profile?.active_act ?? null).then((g) => (gigId.current = g.id));
+  }, [setlist?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!song || !setlistId) return;
+    const t = setTimeout(() => {
+      if (gigId.current) void logPlayed(gigId.current, song.id, fromRequest.current.has(song.id));
+    }, 45_000);
+    return () => clearTimeout(t);
+  }, [song?.id, setlistId]);
 
   // ------------------------------------------------------------ act
   // Starting a set makes its act the one shown on the request page and display.
@@ -226,7 +256,7 @@ export function Perform() {
                   <span className="dim small" style={{ width: 20, textAlign: "right" }}>{n}</span>
                   <span className="grow">
                     <span style={{ display: "block", fontWeight: 600 }}>{s.title}</span>
-                    <span className="small dim">{it.key_override || s.song_key || ""}</span>
+                    <span className="small dim">{it.key_override || singerKey(s) || s.song_key || ""}</span>
                   </span>
                 </button>
               );
@@ -259,6 +289,7 @@ export function Perform() {
                 <>
                   <GearStrip song={song} library={profile?.gear_library ?? {}}
                     next={!extra && setlistId && playable[index + 1] ? songMap.get(playable[index + 1].song_id!) : undefined} />
+                  {midiNote && <div className="small dim" style={{ margin: "-6px 0 10px" }}>{midiNote}</div>}
                   {item?.notes ? <div className="sticky-note">{item.notes}</div> : null}
                 </>
               }

@@ -8,7 +8,9 @@ import { blankItem, db, patchRow, positionBetween, saveRow, softDelete, type Set
 import { useProfile, useSetlistItems, useSetlists, useSongs } from "../lib/hooks";
 import { ALL_KEYS } from "../lib/music/chords";
 import { estimateDuration, formatDuration } from "../lib/stage";
-import { setBalance } from "../lib/gear";
+import { setBalance, singerKey } from "../lib/gear";
+import { daysAgo, playedAtVenue } from "../lib/gigs";
+import { useLiveQuery } from "dexie-react-hooks";
 
 export function SetlistEditor() {
   const { id } = useParams();
@@ -18,6 +20,7 @@ export function SetlistEditor() {
   const items = useSetlistItems(id);
   const songs = useSongs();
   const profile = useProfile();
+  const venueHistory = useLiveQuery(async () => (setlist?.venue && !setlist.signature ? playedAtVenue(setlist.venue, setlist.event_date ?? undefined) : undefined), [setlist?.venue, setlist?.event_date, setlist?.signature]);
   const songMap = useMemo(() => new Map((songs ?? []).map((s) => [s.id, s])), [songs]);
   const [meta, setMeta] = useState<Setlist | null>(null);
   const [q, setQ] = useState("");
@@ -134,7 +137,7 @@ export function SetlistEditor() {
                     const prevItem = items[i - 1];
                     const prev = prevItem?.kind === "song" && prevItem.song_id ? songMap.get(prevItem.song_id) : undefined;
                     const switching = !!(prev?.instrument && song?.instrument && prev.instrument !== song.instrument);
-                    return <SetRow key={it.id} item={it} song={song} number={num} switching={switching} />;
+                    return <SetRow key={it.id} item={it} song={song} number={num} switching={switching} playedHere={song ? venueHistory?.get(song.id) : undefined} />;
                   })}
                 </ul>
               </SortableContext>
@@ -177,7 +180,7 @@ export function SetlistEditor() {
   );
 }
 
-function SetRow({ item, song, number, switching }: { item: SetlistItem; song?: Song; number: number; switching?: boolean }) {
+function SetRow({ item, song, number, switching, playedHere }: { item: SetlistItem; song?: Song; number: number; switching?: boolean; playedHere?: string }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.6 : 1, zIndex: isDragging ? 5 : undefined, position: "relative" as const };
 
@@ -205,12 +208,13 @@ function SetRow({ item, song, number, switching }: { item: SetlistItem; song?: S
               {song.instrument ? ` · ${song.instrument === "piano" ? "🎹" : song.instrument === "electric" ? "⚡" : "🎸"}` : ""}
               {switching ? " · ⇄ switch" : ""}
             </div>
+            {playedHere && <div className="small" style={{ color: "var(--accent)" }}>Played here {daysAgo(playedHere)} days ago</div>}
           </Link>
         ) : <div className="dim">Song was deleted</div>}
       </div>
       <select className="select" style={{ width: 82, minHeight: 36, padding: "0 6px" }} value={item.key_override ?? ""}
         onChange={(e) => patchRow(db.setlist_items, item.id, { key_override: e.target.value || null })} aria-label="Key for this set">
-        <option value="">{song?.song_key ? `${song.song_key}` : "Key"}</option>
+        <option value="">{song ? singerKey(song) ?? song.song_key ?? "Key" : "Key"}</option>
         {ALL_KEYS.map((k) => <option key={k} value={k}>{k}</option>)}
       </select>
       <button className="btn small ghost" onClick={() => softDelete(db.setlist_items, item.id)} aria-label="Remove from set"><IconTrash size={18} /></button>

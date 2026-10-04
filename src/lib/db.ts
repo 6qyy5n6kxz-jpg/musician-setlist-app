@@ -38,6 +38,25 @@ export interface Song extends SyncFields {
   lead_vocal: LeadVocal | null;
   /** Numa X / Nano Cortex / BeatBuddy settings for this song. */
   gear: SongGear;
+  /** Key to perform in when Kendra / Devin sings lead (null = the written key). */
+  key_kendra: string | null;
+  key_devin: string | null;
+}
+
+export interface Gig extends SyncFields {
+  setlist_id: string | null;
+  act_id: string | null;
+  name: string;
+  venue: string | null;
+  gig_date: string;
+  notes: string | null;
+}
+
+export interface GigSong extends SyncFields {
+  gig_id: string;
+  song_id: string | null;
+  played_at: string;
+  from_request: boolean;
 }
 
 export interface SongTimings {
@@ -123,6 +142,8 @@ class StageDB extends Dexie {
   song_files!: Table<SongFile, string>;
   setlists!: Table<Setlist, string>;
   setlist_items!: Table<SetlistItem, string>;
+  gigs!: Table<Gig, string>;
+  gig_songs!: Table<GigSong, string>;
   profile!: Table<Profile, string>;
   blobs!: Table<StoredBlob, string>;
   kv!: Table<KV, string>;
@@ -138,12 +159,17 @@ class StageDB extends Dexie {
       blobs: "id, dirty",
       kv: "key",
     });
+    this.version(2).stores({
+      gigs: "id, setlist_id, gig_date, dirty",
+      gig_songs: "id, gig_id, song_id, dirty",
+    });
   }
 }
 
 export const db = new StageDB();
 
-export const SYNC_TABLES = ["songs", "song_files", "setlists", "setlist_items"] as const;
+// Order matters for pushes: parents before children (foreign keys).
+export const SYNC_TABLES = ["songs", "song_files", "setlists", "setlist_items", "gigs", "gig_songs"] as const;
 export type SyncTable = (typeof SYNC_TABLES)[number];
 
 export const nowIso = () => new Date().toISOString();
@@ -171,6 +197,7 @@ export function blankSong(partial: Partial<Song> = {}): Song {
     title: "", artist: "", song_key: null, tempo: null, time_signature: null, duration_sec: null,
     capo: 0, tags: [], genre: null, year: null, ccli: null, content: "", notes: null, flow: null,
     requestable: true, karaoke: false, timings: null, instrument: null, lead_vocal: null, gear: {},
+    key_kendra: null, key_devin: null,
     ...partial,
   };
 }

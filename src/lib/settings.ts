@@ -43,6 +43,10 @@ export interface Settings {
   displayFollowsScroll: boolean;
   /** Show the request queue pop-up when a new request arrives in Perform mode. */
   requestPopups: boolean;
+  /** Send gear changes over MIDI on song change (this device only; needs a browser with Web MIDI). */
+  midiOut: boolean;
+  /** Name of the MIDI output port to use. */
+  midiPort: string | null;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -71,6 +75,8 @@ export const DEFAULT_SETTINGS: Settings = {
   flashOnBeat: true,
   displayFollowsScroll: true,
   requestPopups: true,
+  midiOut: false,
+  midiPort: null,
 };
 
 const KEY = "stage-settings-v1";

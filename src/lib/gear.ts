@@ -44,6 +44,8 @@ export interface GearLibrary {
   numa?: Preset[];
   cortex?: Preset[];
   beatbuddy?: BeatPreset[];
+  /** MIDI channels / numbering per device, for sending changes automatically. */
+  midi?: MidiConfig;
 }
 
 /** What one song uses. Stored on songs.gear. */
@@ -216,4 +218,69 @@ export function setBalance(songs: { instrument: Instrument | null; lead_vocal: L
 export function presetLabel(p: Preset | undefined | null): string {
   if (!p) return "";
   return `${p.program !== null && p.program !== undefined ? `${p.program} · ` : ""}${p.name}`;
+}
+
+/** The key to perform in given who sings lead (null = use the written key). */
+export function singerKey(song: { lead_vocal: LeadVocal | null; key_kendra: string | null; key_devin: string | null }): string | null {
+  if (song.lead_vocal === "kendra") return song.key_kendra ?? null;
+  if (song.lead_vocal === "devin") return song.key_devin ?? null;
+  if (song.lead_vocal === "both") return song.key_kendra ?? song.key_devin ?? null;
+  return null;
+}
+
+// ------------------------------------------------------------------ MIDI out
+export interface MidiDeviceConfig {
+  /** MIDI channel 1-16 the device listens on. */
+  channel: number;
+  /** The device shows programs starting at 1 (so send number - 1). */
+  oneBased: boolean;
+}
+
+export interface MidiConfig {
+  numa: MidiDeviceConfig;
+  cortex: MidiDeviceConfig;
+  beatbuddy: MidiDeviceConfig;
+}
+
+export const DEFAULT_MIDI: MidiConfig = {
+  numa: { channel: 1, oneBased: true },
+  cortex: { channel: 2, oneBased: true },
+  beatbuddy: { channel: 3, oneBased: true },
+};
+
+export interface MidiMessage {
+  device: "numa" | "cortex" | "beatbuddy";
+  bytes: number[];
+  describe: string;
+}
+
+const clamp7 = (n: number) => Math.max(0, Math.min(127, Math.round(n)));
+
+/**
+ * Standard MIDI messages for a song's gear: Program Change for the Numa X and Nano Cortex;
+ * Bank Select (CC0/CC32 = folder) + Program Change (= song) for the BeatBuddy.
+ */
+export function songMidiMessages(gear: SongGear, lib: GearLibrary, cfg: MidiConfig, instrument: Instrument | null): MidiMessage[] {
+  const out: MidiMessage[] = [];
+  const pc = (device: MidiMessage["device"], c: MidiDeviceConfig, program: number, label: string) => {
+    const ch = (Math.max(1, Math.min(16, c.channel)) - 1) & 0x0f;
+    const value = clamp7(program - (c.oneBased ? 1 : 0));
+    out.push({ device, bytes: [0xc0 | ch, value], describe: `${label}: Program ${program} on ch ${c.channel}` });
+  };
+  const numa = instrument === "piano" ? lib.numa?.find((p) => p.id === gear.numa) : undefined;
+  if (numa?.program != null) pc("numa", cfg.numa, numa.program, `Numa X ${numa.name}`);
+  const cortex = instrument === "electric" ? lib.cortex?.find((p) => p.id === gear.cortex) : undefined;
+  if (cortex?.program != null) pc("cortex", cfg.cortex, cortex.program, `Nano Cortex ${cortex.name}`);
+  const bb = lib.beatbuddy?.find((p) => p.id === gear.beatbuddy);
+  if (bb?.program != null) {
+    const c = cfg.beatbuddy;
+    const ch = (Math.max(1, Math.min(16, c.channel)) - 1) & 0x0f;
+    if (bb.folder != null) {
+      const folder = clamp7(bb.folder - (c.oneBased ? 1 : 0));
+      out.push({ device: "beatbuddy", bytes: [0xb0 | ch, 0, 0], describe: "BeatBuddy bank MSB 0" });
+      out.push({ device: "beatbuddy", bytes: [0xb0 | ch, 32, folder], describe: `BeatBuddy folder ${bb.folder}` });
+    }
+    pc("beatbuddy", c, bb.program, `BeatBuddy ${bb.name}`);
+  }
+  return out;
 }

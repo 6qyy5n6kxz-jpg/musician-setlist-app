@@ -41,3 +41,24 @@ describe("show fit and balance", () => {
     expect(b.switches).toBe(1);
   });
 });
+
+import { DEFAULT_MIDI, singerKey, songMidiMessages } from "./gear";
+describe("singer keys and MIDI", () => {
+  it("picks the lead singer's key", () => {
+    expect(singerKey({ lead_vocal: "kendra", key_kendra: "A", key_devin: "E" })).toBe("A");
+    expect(singerKey({ lead_vocal: "devin", key_kendra: "A", key_devin: null })).toBeNull();
+    expect(singerKey({ lead_vocal: "both", key_kendra: null, key_devin: "E" })).toBe("E");
+  });
+  it("builds program changes and BeatBuddy bank select", () => {
+    const lib: GearLibrary = {
+      numa: [{ id: "n", program: 7, name: "Upright", category: "upright" }],
+      cortex: [{ id: "c", program: 3, name: "Edge", category: "edge" }],
+      beatbuddy: [{ id: "b", program: 2, name: "Shuffle", category: "blues", folder: 4 }],
+    };
+    const msgs = songMidiMessages({ numa: "n", cortex: "c", beatbuddy: "b" }, lib, DEFAULT_MIDI, "piano");
+    expect(msgs.map((m) => m.bytes)).toEqual([
+      [0xc0, 6],            // Numa ch1, program 7 shown -> 6 sent
+      [0xb2, 0, 0], [0xb2, 32, 3], [0xc2, 1], // BeatBuddy ch3: folder 4 -> 3, song 2 -> 1
+    ]); // no Cortex: the song is a piano song
+  });
+});

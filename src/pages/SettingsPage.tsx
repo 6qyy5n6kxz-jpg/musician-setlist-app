@@ -2,6 +2,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { GearLibraryEditor } from "../components/GearLibraryEditor";
+import { MidiOutPanel } from "../components/MidiOutPanel";
 import { QrCode } from "../components/QrCode";
 import { SyncBadge } from "../components/SyncBadge";
 import { db, live } from "../lib/db";
@@ -140,6 +141,7 @@ function GearSection() {
         <em> Learn</em>. One switch can send a key to the app and MIDI to your gear at the same time.
       </div>
       {profile ? <GearLibraryEditor profile={profile} /> : <div className="small dim">Sign in to set up your gear.</div>}
+      {profile && <MidiOutPanel profile={profile} />}
     </Section>
   );
 }

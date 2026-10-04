@@ -81,6 +81,7 @@ export function Setlists() {
       <div className="row" style={{ marginBottom: 14 }}>
         <h1 className="grow">Setlists</h1>
         <SyncBadge />
+        <Link className="btn" to="/gigs">Gig log</Link>
         <button className="btn primary" onClick={create}><IconPlus /> New setlist</button>
       </div>
       {setlists && setlists.length === 0 ? (

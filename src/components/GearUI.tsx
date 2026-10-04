@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { Song } from "../lib/db";
+import { ALL_KEYS } from "../lib/music/chords";
 import {
   BEAT_CATEGORIES, GUITAR_CATEGORIES, INSTRUMENT_LABELS, PIANO_CATEGORIES, presetLabel, suggestGear, suggestShows,
   VOCAL_LABELS, type GearLibrary, type Instrument, type LeadVocal, type Preset, type SongGear,
@@ -97,6 +98,20 @@ export function SongGearEditor({ song, library, history, onChange }: {
           ))}
         </div>
       )}
+      <div className="meta-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}>
+        {(["kendra", "devin"] as const).map((who) => {
+          const field = who === "kendra" ? "key_kendra" : "key_devin";
+          return (
+            <label key={who} className="field"><span>{VOCAL_LABELS[who]}'s key</span>
+              <select className="select" value={song[field] ?? ""} onChange={(e) => onChange({ [field]: e.target.value || null })}>
+                <option value="">{song.song_key ? `Written key (${song.song_key})` : "Written key"}</option>
+                {ALL_KEYS.map((k) => <option key={k}>{k}</option>)}
+              </select>
+            </label>
+          );
+        })}
+      </div>
+      <p className="small dim" style={{ margin: "-4px 0 0" }}>The chart transposes to the lead singer's key automatically (a key set on a setlist entry still wins).</p>
       <div className="meta-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
         {song.instrument === "piano" && (
           <div className="stack" style={{ gap: 4 }}>
