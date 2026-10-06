@@ -10,7 +10,7 @@ import { useProfile } from "../lib/hooks";
 import { appUrl } from "../lib/links";
 import { DEFAULT_SETTINGS, PEDAL_ACTION_LABELS, updateSettings, useSettings, type PedalAction, type Theme } from "../lib/settings";
 import { supabase } from "../lib/supabase";
-import { syncNow, useSyncStatus } from "../lib/sync";
+import { signOut, syncNow, useSyncStatus } from "../lib/sync";
 import SEND_TO_STAGE_JS from "../../shortcut/send-to-stage.js?raw";
 
 export function SettingsPage() {
@@ -50,8 +50,8 @@ function Section({ title, children, hint }: { title: string; children: React.Rea
 }
 
 function Account() {
-  const { userEmail, phase, lastSynced, error, pending } = useSyncStatus();
-  const [email, setEmail] = useState("");
+  const { userEmail, phase, lastSynced, error, pending, lostSession } = useSyncStatus();
+  const [email, setEmail] = useState(lostSession ?? "");
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -89,7 +89,7 @@ function Account() {
             {error && <div className="small" style={{ color: "var(--danger)" }}>{error}</div>}
           </div>
           <button className="btn" onClick={() => void syncNow()}>Sync now</button>
-          <button className="btn ghost" onClick={() => supabase.auth.signOut()}>Sign out</button>
+          <button className="btn ghost" onClick={() => void signOut()}>Sign out</button>
         </div>
         <ChangePassword />
       </Section>

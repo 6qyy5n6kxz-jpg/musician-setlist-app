@@ -16,10 +16,17 @@ interface SyncStatus {
   lastSynced: string | null;
   error: string | null;
   pending: number;
+  /** Attachments (PDFs, tracks) saved on this device but not uploaded yet. */
+  pendingFiles: number;
   userEmail: string | null;
+  /** Account this device last synced as — set when it got signed out without anyone tapping Sign out. */
+  lostSession: string | null;
 }
 
-let status: SyncStatus = { phase: "idle", lastSynced: null, error: null, pending: 0, userEmail: null };
+const LAST_EMAIL = "sync-last-email";
+const readLastEmail = () => { try { return localStorage.getItem(LAST_EMAIL); } catch { return null; } };
+
+let status: SyncStatus = { phase: "idle", lastSynced: null, error: null, pending: 0, pendingFiles: 0, userEmail: null, lostSession: null };
 const statusListeners = new Set<() => void>();
 function setStatus(patch: Partial<SyncStatus>) {
   status = { ...status, ...patch };
@@ -84,11 +91,11 @@ function fromServer(row: Record<string, unknown>) {
   return { ...rest, dirty: 0 as const };
 }
 
-async function countPending(): Promise<number> {
+async function countPending(): Promise<Pick<SyncStatus, "pending" | "pendingFiles">> {
   let n = 0;
   for (const t of SYNC_TABLES) n += await db[t].where("dirty").equals(1).count();
-  n += await db.blobs.where("dirty").equals(1).count();
-  return n;
+  const files = await db.blobs.where("dirty").equals(1).count();
+  return { pending: n + files, pendingFiles: files };
 }
 
 let session: Session | null = null;
@@ -102,7 +109,7 @@ export function scheduleSync(delayMs = 1200) {
 }
 
 export async function syncNow(): Promise<void> {
-  setStatus({ pending: await countPending() });
+  setStatus(await countPending());
   if (!navigator.onLine) return setStatus({ phase: "offline" });
   if (!session) return setStatus({ phase: "signed-out" });
   if (running) {
@@ -123,7 +130,7 @@ export async function syncNow(): Promise<void> {
       phase: fileErrors.length ? "error" : "idle",
       error: fileErrors.length ? `Couldn't upload: ${fileErrors.join(", ")} — remove and attach again` : null,
       lastSynced: new Date().toISOString(),
-      pending: await countPending(),
+      ...(await countPending()),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -222,6 +229,8 @@ async function uploadBlobs(userId: string): Promise<string[]> {
   const failed: string[] = [];
   let uploaded = 0;
   for (const b of pending) {
+    // Lost the login mid-batch: stop here (everything left stays queued) rather than keep hammering
+    if (!session) break;
     const file = await db.song_files.get(b.id);
     const song = file ? await db.songs.get(file.song_id) : undefined;
     if (!file || file.deleted_at || !song || song.deleted_at) {
@@ -245,6 +254,8 @@ async function uploadBlobs(userId: string): Promise<string[]> {
       .from(FILE_BUCKET)
       .upload(path, b.blob, { upsert: true, contentType: file.mime ?? undefined });
     if (error) {
+      const code = Number((error as { statusCode?: string | number }).statusCode ?? 0);
+      if (code === 401 || code === 403 || /jwt|token/i.test(error.message)) break; // auth problem, not this file
       failed.push(file.name);
       // The server rejected the file itself (too big, bad request): stop retrying until it's re-attached.
       // Network trouble or server outages stay pending and retry on the next sync.
@@ -287,20 +298,32 @@ function subscribeRealtime() {
   realtime = ch.subscribe();
 }
 
+let manualSignOut = false;
+/** Sign out on purpose (no "you were signed out" warning afterwards). */
+export async function signOut() {
+  manualSignOut = true;
+  await supabase.auth.signOut();
+}
+
 let started = false;
 export function startSync() {
   if (started) return;
   started = true;
   supabase.auth.getSession().then(({ data }) => {
     session = data.session;
-    setStatus({ userEmail: session?.user.email ?? null });
+    setStatus({ userEmail: session?.user.email ?? null, lostSession: session ? null : readLastEmail() });
     subscribeRealtime();
     void syncNow();
   });
   supabase.auth.onAuthStateChange((event, s) => {
     const changedUser = s?.user.id !== session?.user.id;
     session = s;
-    setStatus({ userEmail: s?.user.email ?? null });
+    try {
+      if (s?.user.email) localStorage.setItem(LAST_EMAIL, s.user.email);
+      else if (event === "SIGNED_OUT" && manualSignOut) localStorage.removeItem(LAST_EMAIL);
+    } catch { /* private mode */ }
+    if (event === "SIGNED_OUT") manualSignOut = false;
+    setStatus({ userEmail: s?.user.email ?? null, lostSession: s ? null : readLastEmail() });
     if (changedUser || event === "SIGNED_IN") {
       subscribeRealtime();
       void syncNow();

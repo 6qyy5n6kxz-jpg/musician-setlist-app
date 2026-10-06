@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { HashRouter, NavLink, Navigate, Outlet, Route, Routes, useNavigate } from "react-router-dom";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { IconGear, IconInbox, IconLibrary, IconSets } from "./components/Icons";
+import { SignedOutBanner } from "./components/SyncBadge";
 import { describeRequest, RequestsProvider, useRequests } from "./lib/requests";
 import { startSync } from "./lib/sync";
 import { Library } from "./pages/Library";
@@ -72,6 +73,7 @@ function Shell() {
   return (
     <div className="shell">
       <main className="main">
+        <SignedOutBanner />
         <Outlet />
       </main>
       <nav className="tabbar no-print">

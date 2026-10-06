@@ -153,6 +153,10 @@ h1, h2, h3 { line-height: 1.15; margin: 0; }
 .sync-dot.syncing { background: var(--accent); animation: pulse 1s infinite; }
 .sync-dot.error { background: var(--danger); }
 .sync-dot.offline, .sync-dot.signed-out { background: var(--text-dim); }
+.signed-out-banner {
+  display: block; padding: 12px 20px; background: var(--danger); color: #fff; text-decoration: none;
+  font-size: 0.95rem; line-height: 1.35; position: sticky; top: 0; z-index: 40;
+}
 @keyframes pulse { 50% { opacity: 0.35; } }
 
 /* ---------------------------------------------------------------- lists */
