@@ -1,12 +1,13 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { singerKey } from "../lib/gear";
 import { playStats } from "../lib/gigs";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { IconBack, IconEdit, IconPlay, IconSets } from "../components/Icons";
 import { SongStage } from "../components/SongStage";
 import { blankItem, db, live, positionBetween, saveRow } from "../lib/db";
-import { useSetlists, useSong } from "../lib/hooks";
+import { useSetlists, useSong, useSongs } from "../lib/hooks";
+import { neighbours, songOrder, useSwipe, type SwipeDir } from "../lib/swipe";
 import { keyPrefersFlats } from "../lib/music/chords";
 import { toChordProFile, transposeContent } from "../lib/music/chordpro";
 import { keyDistance } from "../lib/music/chords";
@@ -19,6 +20,25 @@ export function SongPage() {
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const stats = useLiveQuery(async () => (id ? (await playStats()).get(id) : undefined), [id]);
+  const allSongs = useSongs();
+  // Swipe through the Songs list as last shown (search/filter/sort); otherwise A–Z
+  const order = useMemo(() => {
+    const ids = allSongs?.map((s) => s.id) ?? [];
+    const saved = songOrder()?.filter((x) => ids.includes(x));
+    return saved && id && saved.includes(id) ? saved : ids;
+  }, [allSongs, id]);
+  const nb = id ? neighbours(order, id) : { prev: null, next: null, index: -1 };
+  const [entered, setEntered] = useState<SwipeDir | null>(null);
+  const goTo = (dir: SwipeDir) => {
+    const target = dir === "left" ? nb.next : nb.prev;
+    if (!target) return;
+    setPendingKey(null);
+    setAddOpen(false);
+    setEntered(dir);
+    // replace: Back still returns to the Songs list rather than through every song
+    navigate(`/song/${target}`, { replace: true });
+  };
+  const swipe = useSwipe(goTo);
 
   if (song === undefined) return null;
   if (song === null || song.deleted_at) return <div className="page empty-state">Song not found. <Link to="/">Back to songs</Link></div>;
@@ -51,7 +71,12 @@ export function SongPage() {
     <div className="song-view">
       <div className="topbar no-print">
         <button className="btn ghost icon" onClick={() => navigate(-1)} aria-label="Back"><IconBack /></button>
-        <div className="grow truncate" style={{ fontWeight: 700 }}>{song.title}</div>
+        <button className="btn ghost icon" onClick={() => goTo("right")} disabled={!nb.prev} aria-label="Previous song">‹</button>
+        <div className="grow truncate" style={{ fontWeight: 700 }}>
+          {song.title}
+          {nb.index >= 0 && order.length > 1 && <span className="dim small" style={{ fontWeight: 400 }}> · {nb.index + 1}/{order.length}</span>}
+        </div>
+        <button className="btn ghost icon" onClick={() => goTo("left")} disabled={!nb.next} aria-label="Next song">›</button>
         {pendingKey && song.song_key && (
           <button className="btn small primary" onClick={saveKey} title="Rewrite the chart's chords in this key">Save in {pendingKey}</button>
         )}
@@ -78,7 +103,9 @@ export function SongPage() {
           {stats.last ? ` · last on ${new Date(stats.last.date + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}${stats.last.venue ? ` at ${stats.last.venue}` : ""}` : ""}
         </div>
       )}
-      <SongStage song={song} performKey={singerKey(song)} onPerformKeyChange={setPendingKey} />
+      <div key={song.id} className={`swipe-area ${entered ? `swipe-in-${entered}` : ""}`} {...swipe}>
+        <SongStage song={song} performKey={singerKey(song)} onPerformKeyChange={setPendingKey} />
+      </div>
     </div>
   );
 }

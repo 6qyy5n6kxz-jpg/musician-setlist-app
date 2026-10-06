@@ -1,5 +1,5 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { IconImport, IconPlus, IconSearch } from "../components/Icons";
 import { SyncBadge } from "../components/SyncBadge";
@@ -7,6 +7,7 @@ import { DuoBadges } from "../components/GearUI";
 import { blankSong, db, live, saveRow, type Song } from "../lib/db";
 import { sortTitle, useSongs } from "../lib/hooks";
 import { formatDuration } from "../lib/stage";
+import { rememberSongOrder } from "../lib/swipe";
 
 type SortMode = "title" | "artist" | "recent" | "key";
 
@@ -53,6 +54,9 @@ export function Library() {
     if (sort === "key") list = [...list].sort((a, b) => (a.song_key ?? "~").localeCompare(b.song_key ?? "~"));
     return list;
   }, [songs, q, tag, sort, inLyrics, instrument, vocal]);
+
+  // The song page swipes through this exact list (search, filters and sort included)
+  useEffect(() => { if (songs) rememberSongOrder(filtered.map((s) => s.id)); }, [songs, filtered]);
 
   const addSong = async () => {
     const s = await saveRow(db.songs, blankSong());

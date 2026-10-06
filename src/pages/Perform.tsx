@@ -16,6 +16,7 @@ import { ensureGig, logPlayed } from "../lib/gigs";
 import { useSettings } from "../lib/settings";
 import { useSyncStatus } from "../lib/sync";
 import { useWakeLock } from "../lib/stage";
+import { neighbours, songOrder, useSwipe } from "../lib/swipe";
 
 export function Perform() {
   const { setlistId, songId } = useParams();
@@ -59,6 +60,15 @@ export function Perform() {
   }, [playable.length, setParams]);
   const next = useCallback(() => { if (extra) setExtra(null); else if (index < playable.length - 1) go(index + 1); }, [extra, index, playable.length, go]);
   const prev = useCallback(() => { if (extra) setExtra(null); else if (index > 0) go(index - 1); }, [extra, index, go]);
+  // Swipe left/right: through the set, or through the Songs list when performing a single song
+  const swipe = useSwipe((dir) => {
+    if (setlistId) return dir === "left" ? next() : prev();
+    const order = songOrder();
+    if (!order || !songId) return;
+    const n = neighbours(order, songId);
+    const target = dir === "left" ? n.next : n.prev;
+    if (target) navigate(`/perform/song/${target}`, { replace: true });
+  });
 
   // ------------------------------------------------------------ live broadcast
   const liveEnabled = !!userEmail && !!profile?.live_token;
@@ -242,7 +252,7 @@ export function Perform() {
         <button className="btn small primary" onClick={next} disabled={!extra && index >= playable.length - 1}>Next ›</button>
       </div>
 
-      <div className="perform-body">
+      <div className="perform-body" {...swipe}>
         {setlistId && (
           <aside className={`perform-side ${sideOpen ? "" : "hidden"}`}>
             {(items ?? []).map((it) => {

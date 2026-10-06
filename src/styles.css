@@ -200,6 +200,12 @@ h1, h2, h3 { line-height: 1.15; margin: 0; }
 
 /* ---------------------------------------------------------------- song view */
 .song-view { display: flex; flex-direction: column; height: 100%; }
+.swipe-area { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.swipe-in-left { animation: swipe-in-left 0.22s ease-out; }
+.swipe-in-right { animation: swipe-in-right 0.22s ease-out; }
+@keyframes swipe-in-left { from { transform: translateX(40px); opacity: 0.3; } }
+@keyframes swipe-in-right { from { transform: translateX(-40px); opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .swipe-in-left, .swipe-in-right { animation: none; } }
 .stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .song-head { padding: 12px 20px 0; }
 .song-head h1 { font-size: 1.6rem; }

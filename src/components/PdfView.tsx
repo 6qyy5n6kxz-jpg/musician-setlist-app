@@ -327,6 +327,7 @@ function PdfPage({ doc, num, ratio, width, marks, annotating, tool, pencilSeen, 
       <canvas
         ref={inkCanvas}
         className="pdf-ink"
+        data-no-swipe={annotating ? "" : undefined}
         style={{
           width, height,
           pointerEvents: annotating ? "auto" : "none",
