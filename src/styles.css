@@ -211,6 +211,37 @@ h1, h2, h3 { line-height: 1.15; margin: 0; }
 @keyframes swipe-in-right { from { transform: translateX(-40px); opacity: 0.3; } }
 @media (prefers-reduced-motion: reduce) { .swipe-in-left, .swipe-in-right { animation: none; } }
 .stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.stage-body { flex: 1; min-height: 0; display: flex; }
+.stage-body > .chart-scroll { flex: 1; min-width: 0; }
+.stage.live .chart-scroll { padding: 10px 18px; }
+.stage.live .song-head h1 { font-size: 1.05rem; color: var(--text-dim); }
+
+/* Chord helper: column beside the chart; strip along the bottom on narrow screens */
+.chord-helper { width: 214px; flex: none; border-left: 1px solid var(--line); overflow-y: auto; padding: 10px; background: var(--bg-raised); }
+.chord-helper-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 8px; }
+.chord-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.chord-card { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
+.chord-card.piano { grid-column: span 2; cursor: default; }
+.chord-name { font-weight: 700; color: var(--chord, #f5b941); font-size: 0.95rem; }
+.chord-alt { font-size: 0.7rem; color: var(--text-dim); }
+.dg-line { stroke: var(--text-dim); stroke-width: 1; }
+.dg-nut { fill: var(--text); }
+.dg-dot { fill: var(--text); }
+.dg-open { fill: none; stroke: var(--text); stroke-width: 1.2; }
+.dg-mute { fill: var(--text-dim); font-size: 9px; text-anchor: middle; }
+.dg-fretno { fill: var(--text-dim); font-size: 9px; }
+.pk-white { fill: #f4f4f4; stroke: #555; stroke-width: 0.6; }
+.pk-black { fill: #222; stroke: #000; stroke-width: 0.6; }
+.pk-white.on, .pk-black.on { fill: var(--accent); }
+.pk-white.bass, .pk-black.bass { fill: #4a8fe7; }
+@media (max-width: 899px) {
+  .stage-body { flex-direction: column; }
+  .chord-helper { width: auto; border-left: 0; border-top: 1px solid var(--line); overflow-y: hidden; overflow-x: auto; display: flex; gap: 8px; align-items: stretch; padding: 6px 10px; }
+  .chord-helper-head { flex-direction: column; margin: 0; justify-content: center; }
+  .chord-grid { display: flex; gap: 6px; }
+  .chord-card { flex: none; width: 88px; }
+  .chord-card.piano { width: 170px; }
+}
 .song-head { padding: 12px 20px 0; }
 .song-head h1 { font-size: 1.6rem; }
 .song-facts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
@@ -256,6 +287,13 @@ h1, h2, h3 { line-height: 1.15; margin: 0; }
 
 /* ---------------------------------------------------------------- perform */
 .perform { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); z-index: 20; }
+.live-pill {
+  position: fixed; right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); z-index: 25;
+  display: flex; align-items: center; gap: 2px; padding: 4px 6px 4px 10px; border-radius: 999px;
+  background: var(--bg-raised); border: 1px solid var(--line); opacity: 0.35; transition: opacity 0.2s;
+}
+.live-pill:hover, .live-pill:focus-within, .live-pill:active { opacity: 1; }
+.perform.live .chart-scroll { padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: 60px; }
 .perform-top {
   display: flex; align-items: center; gap: 8px;
   padding: calc(env(safe-area-inset-top) + 6px) 12px 6px; border-bottom: 1px solid var(--line);

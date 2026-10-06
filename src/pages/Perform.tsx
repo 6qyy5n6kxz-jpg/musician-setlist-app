@@ -13,7 +13,7 @@ import { GearStrip } from "../components/GearUI";
 import { DEFAULT_MIDI, singerKey, songMidiMessages } from "../lib/gear";
 import { sendMidi } from "../lib/midi";
 import { ensureGig, logPlayed } from "../lib/gigs";
-import { useSettings } from "../lib/settings";
+import { updateSettings, useSettings } from "../lib/settings";
 import { useSyncStatus } from "../lib/sync";
 import { useWakeLock } from "../lib/stage";
 import { neighbours, songOrder, useSwipe } from "../lib/swipe";
@@ -52,6 +52,27 @@ export function Perform() {
   const stage = useRef<StageHandle>(null);
 
   useWakeLock(true);
+
+  // Live mode: hide every bar so the chart fills the screen (pedals and swipes still work)
+  const [live, setLive] = useState(() => sessionStorage.getItem("perform-live") === "1");
+  const setLiveMode = useCallback((on: boolean) => {
+    setLive(on);
+    try { sessionStorage.setItem("perform-live", on ? "1" : "0"); } catch { /* private mode */ }
+    const d = document as Document & { webkitFullscreenElement?: Element; webkitExitFullscreen?: () => void };
+    const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+    try {
+      if (on && !(d.fullscreenElement || d.webkitFullscreenElement)) void (el.requestFullscreen?.() ?? el.webkitRequestFullscreen?.());
+      if (!on && (d.fullscreenElement || d.webkitFullscreenElement)) void (d.exitFullscreen?.() ?? d.webkitExitFullscreen?.());
+    } catch { /* fullscreen not allowed here (e.g. iPhone) — hiding the bars is enough */ }
+  }, []);
+  // Leaving Perform mode always leaves full screen
+  useEffect(() => () => { if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {}); }, []);
+  useEffect(() => {
+    if (!live) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setLiveMode(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [live, setLiveMode]);
 
   const go = useCallback((i: number) => {
     setExtra(null);
@@ -216,8 +237,16 @@ export function Perform() {
 
   let n = 0;
   return (
-    <div className="perform">
-      <div className="perform-top">
+    <div className={`perform ${live ? "live" : ""}`}>
+      {live && (
+        <div className="live-pill no-print">
+          {setlistId && !extra && <span className="small dim">{index + 1}/{playable.length}</span>}
+          <button className="btn small icon ghost" onClick={() => updateSettings({ fontScale: Math.max(0.6, Math.round((settings.fontScale - 0.1) * 100) / 100) })} aria-label="Smaller text">A−</button>
+          <button className="btn small icon ghost" onClick={() => updateSettings({ fontScale: Math.min(2.6, Math.round((settings.fontScale + 0.1) * 100) / 100) })} aria-label="Larger text">A+</button>
+          <button className="btn small ghost" onClick={() => setLiveMode(false)}>Exit live</button>
+        </div>
+      )}
+      {!live && <div className="perform-top">
         <button className="btn icon ghost" onClick={exit} aria-label="Exit perform mode"><IconClose /></button>
         {setlistId && <button className={`btn icon ${sideOpen ? "on" : ""}`} onClick={() => setSideOpen(!sideOpen)} aria-label="Show set"><IconList /></button>}
         <div className="grow" style={{ minWidth: 0 }}>
@@ -248,13 +277,14 @@ export function Perform() {
           <IconInbox size={18} /> {queue.length || ""}
           {newCount > 0 && <span className="badge" style={{ position: "absolute", top: -6, right: -6 }}>{newCount}</span>}
         </button>
+        <button className="btn small" onClick={() => setLiveMode(true)} title="Live mode: hide the menus so the chart fills the screen">Live</button>
         <button className="btn small" onClick={prev} disabled={!extra && index === 0}>‹ Prev</button>
         <button className="btn small primary" onClick={next} disabled={!extra && index >= playable.length - 1}>Next ›</button>
-      </div>
+      </div>}
 
       <div className="perform-body" {...swipe}>
         {setlistId && (
-          <aside className={`perform-side ${sideOpen ? "" : "hidden"}`}>
+          <aside className={`perform-side ${sideOpen && !live ? "" : "hidden"}`}>
             {(items ?? []).map((it) => {
               if (it.kind === "break") { n = 0; return <div key={it.id} className="brk">{it.label}</div>; }
               const s = it.song_id ? songMap.get(it.song_id) : undefined;
@@ -290,6 +320,7 @@ export function Perform() {
               onReachStart={setlistId ? prev : undefined}
               activePos={liveEnabled ? slidePos : null}
               pedalsEnabled={!drawer}
+              live={live}
               pedalHandlers={{
                 nextSong: next, prevSong: prev,
                 nextSlide: () => stepSlide(1), prevSlide: () => stepSlide(-1),

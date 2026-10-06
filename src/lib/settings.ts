@@ -26,6 +26,8 @@ export interface Settings {
   showChords: boolean;
   nashville: boolean;
   columns: 1 | 2;
+  /** Chord diagram panel beside the chart. */
+  chordHelper: boolean;
   chordColor: string;
   /** Key name (KeyboardEvent.key) -> action. Bluetooth pedals send keys like PageDown or ArrowRight. */
   pedalMap: Record<string, PedalAction>;
@@ -55,6 +57,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showChords: true,
   nashville: false,
   columns: 1,
+  chordHelper: false,
   chordColor: "#f5b941",
   pedalMap: {
     PageDown: "pageDown",

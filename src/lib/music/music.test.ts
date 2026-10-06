@@ -200,3 +200,30 @@ describe("OnSong library exports", () => {
     expect(tidyTitle("Fast car")).toBe("Fast car");
   });
 });
+
+import { chordIntervals, guitarFingerings, pianoKeys } from "./voicings";
+
+describe("chord helper voicings", () => {
+  const first = (c: string) => guitarFingerings(c)[0]?.map((x) => (x < 0 ? "x" : x)).join("");
+  it("knows chord tones", () => {
+    expect(chordIntervals("m7")).toEqual([0, 3, 7, 10]);
+    expect(chordIntervals("dim7")).toEqual([0, 3, 6, 9]);
+    expect(chordIntervals("sus4")).toEqual([0, 5, 7]);
+    expect(chordIntervals("maj7")).toEqual([0, 4, 7, 11]);
+    expect(chordIntervals("add9")).toEqual([0, 4, 7, 14]);
+  });
+  it("finds the standard guitar shapes", () => {
+    expect(first("C")).toBe("x32010");
+    expect(first("G")).toBe("320003");
+    expect(first("D")).toBe("xx0232");
+    expect(first("Am")).toBe("x02210");
+    expect(first("F")).toBe("133211");
+    expect(first("Bm")).toBe("x24432");
+    expect(first("E7")).toBe("020100");
+    expect(first("G/B")).toBe("x20003");
+  });
+  it("puts a slash bass under the piano voicing", () => {
+    expect(pianoKeys("Dadd9/A")).toEqual({ keys: [2, 4, 6, 9], bass: -3 });
+    expect(pianoKeys("Am")?.bass).toBeNull();
+  });
+});

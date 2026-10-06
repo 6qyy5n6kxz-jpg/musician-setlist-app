@@ -2,11 +2,12 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { db, patchRow, type Song } from "../lib/db";
 import { useSongFiles } from "../lib/hooks";
-import { ALL_KEYS, guessKey, keyDistance, transposeKey } from "../lib/music/chords";
+import { ALL_KEYS, guessKey, keyDistance, keyPrefersFlats, transposeChord, transposeKey } from "../lib/music/chords";
 import { allChords, applyFlow, parseChordPro, type Section } from "../lib/music/chordpro";
 import { updateSettings, useSettings, type PedalAction } from "../lib/settings";
 import { AutoScroller, beatsPerBar, createTapTempo, estimateDuration, formatDuration, Metronome, timedSectionAt, usePedalActions } from "../lib/stage";
 import { ChartView } from "./ChartView";
+import { ChordHelper } from "./ChordHelper";
 import { IconMetronome, IconMusic, IconPause, IconPlay, IconScroll } from "./Icons";
 import { PdfView } from "./PdfView";
 
@@ -37,11 +38,13 @@ interface Props {
   /** Shown above the title (e.g. "Song 3 of 14"). */
   kicker?: ReactNode;
   pedalsEnabled?: boolean;
+  /** Live mode: no control bar and a compact header, so the chart gets the whole screen. */
+  live?: boolean;
 }
 
 export function SongStage(props: Props) {
   const { song, performKey, capoOverride, onPerformKeyChange, onCapoChange, onActiveSection, onReachEnd, onReachStart,
-    pedalHandlers, activePos, handleRef, extraControls, kicker, pedalsEnabled = true, onSectionsChange, onTimedSection } = props;
+    pedalHandlers, activePos, handleRef, extraControls, kicker, pedalsEnabled = true, onSectionsChange, onTimedSection, live = false } = props;
   const settings = useSettings();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -246,24 +249,39 @@ export function SongStage(props: Props) {
     onCapoChange?.(v);
   };
 
+  // ---------------------------------------------------------- chord helper
+  // Unique chords in order of first appearance, named as played (guitar: capo shapes) and as heard (piano)
+  const helperChords = useMemo(() => {
+    const performKey = writtenKey ? transposeKey(writtenKey, transpose) : null;
+    const shapeKey = performKey && capo ? transposeKey(performKey, -capo) : performKey;
+    const uniq = (list: string[]) => [...new Set(list)];
+    const raw = uniq(sections.flatMap((sec) => sec.lines.flatMap((l) => (l.kind === "lyrics" ? l.segments.map((g) => g.chord ?? "") : []))).filter(Boolean));
+    return {
+      guitar: uniq(raw.map((c) => transposeChord(c, transpose - capo, keyPrefersFlats(shapeKey)))),
+      piano: uniq(raw.map((c) => transposeChord(c, transpose, keyPrefersFlats(performKey)))),
+    };
+  }, [sections, writtenKey, transpose, capo]);
+  const showHelper = settings.chordHelper && view === "chart" && hasChart;
+
   const fontStep = (d: number) => updateSettings({ fontScale: Math.max(0.6, Math.min(2.6, Math.round((settings.fontScale + d) * 100) / 100)) });
 
   return (
-    <div className="stage">
+    <div className={`stage ${live ? "live" : ""}`}>
       <div className={`beat-flash ${flash}`} />
+      <div className="stage-body">
       <div className="chart-scroll" ref={scrollRef} onScroll={onScroll}>
-        <div className="song-head" style={{ padding: 0, marginBottom: 14 }}>
-          {kicker}
+        <div className="song-head" style={{ padding: 0, marginBottom: live ? 8 : 14 }}>
+          {!live && kicker}
           <h1>{song.title || "Untitled"}</h1>
-          <div className="dim">{song.artist}</div>
-          <div className="song-facts">
+          {!live && <div className="dim">{song.artist}</div>}
+          {!live && <div className="song-facts">
             {shownKey && <span className="chip accent">Key {shownKey}{transpose ? ` (from ${writtenKey})` : ""}</span>}
             {capo > 0 && shownKey && <span className="chip accent">Capo {capo} · {transposeKey(shownKey, -capo)} shapes</span>}
             {song.tempo && <span className="chip">{song.tempo} bpm</span>}
             {song.time_signature && <span className="chip">{song.time_signature}</span>}
             <span className="chip">{formatDuration(song.duration_sec) || `~${formatDuration(songDuration)}`}</span>
             {song.flow && useFlow && <span className="chip">{song.flow}</span>}
-          </div>
+          </div>}
         </div>
         {song.notes && <div className="sticky-note">{song.notes}</div>}
         {view === "pdf" && pdfBlob ? (
@@ -289,6 +307,11 @@ export function SongStage(props: Props) {
         ) : (
           <div className="empty-state">No chart yet. Edit the song to add chords and lyrics, or attach a PDF.</div>
         )}
+      </div>
+      {showHelper && (
+        <ChordHelper song={song} guitarChords={helperChords.guitar} pianoChords={helperChords.piano}
+          onClose={() => updateSettings({ chordHelper: false })} />
+      )}
       </div>
 
       {audioUrl && (
@@ -338,7 +361,7 @@ export function SongStage(props: Props) {
         </div>
       )}
 
-      <div className="controls no-print">
+      {!live && <div className="controls no-print">
         <div className="group" aria-label="Key">
           <button className="btn small icon" onClick={() => changeTranspose(transpose - 1)} aria-label="Transpose down">−</button>
           <select
@@ -362,6 +385,9 @@ export function SongStage(props: Props) {
         <div className="group">
           <button className={`btn small ${settings.showChords ? "on" : ""}`} onClick={() => updateSettings({ showChords: !settings.showChords })} title="Show chords">Chords</button>
           <button className={`btn small ${settings.nashville ? "on" : ""}`} onClick={() => updateSettings({ nashville: !settings.nashville })} title="Nashville numbers">123</button>
+          {hasChart && view === "chart" && (
+            <button className={`btn small ${settings.chordHelper ? "on" : ""}`} onClick={() => updateSettings({ chordHelper: !settings.chordHelper })} title="Chord diagrams">Diagrams</button>
+          )}
           {song.flow && <button className={`btn small ${useFlow ? "on" : ""}`} onClick={() => setUseFlow(!useFlow)} title="Play in flow order">Flow</button>}
           {pdf && hasChart && <button className={`btn small ${view === "pdf" ? "on" : ""}`} onClick={() => setView(view === "pdf" ? "chart" : "pdf")}>PDF</button>}
         </div>
@@ -387,7 +413,7 @@ export function SongStage(props: Props) {
         </div>
         <div className="spacer" />
         {extraControls}
-      </div>
+      </div>}
     </div>
   );
 }
