@@ -11,6 +11,7 @@ import { estimateDuration, formatDuration } from "../lib/stage";
 import { setBalance, singerKey } from "../lib/gear";
 import { daysAgo, playedAtVenue } from "../lib/gigs";
 import { useLiveQuery } from "dexie-react-hooks";
+import { isSlow, optimizeSet, scoreSet, songEnergy, type FlowReport, type OptOptions, type OptSong } from "../lib/setOptimizer";
 
 export function SetlistEditor() {
   const { id } = useParams();
@@ -25,6 +26,7 @@ export function SetlistEditor() {
   const [meta, setMeta] = useState<Setlist | null>(null);
   const [q, setQ] = useState("");
   const [showBuild, setShowBuild] = useState(false);
+  const [showOptimize, setShowOptimize] = useState(false);
 
   useEffect(() => { if (setlist && meta?.id !== setlist.id) setMeta(setlist); }, [setlist, meta]);
 
@@ -145,9 +147,11 @@ export function SetlistEditor() {
           )}
           <div className="row" style={{ marginTop: 10 }}>
             <button className="btn" onClick={addBreak}><IconPlus size={18} /> Set break</button>
-            <button className="btn" onClick={() => setShowBuild(!showBuild)}>Auto-build…</button>
+            <button className="btn" onClick={() => { setShowBuild(!showBuild); setShowOptimize(false); }}>Auto-build…</button>
+            <button className="btn" disabled={totalCount < 3} onClick={() => { setShowOptimize(!showOptimize); setShowBuild(false); }}>Optimize order…</button>
           </div>
           {showBuild && <AutoBuild setlist={setlist} items={items} songs={songs ?? []} onDone={() => setShowBuild(false)} />}
+          {showOptimize && <OptimizePanel items={items} songMap={songMap} onClose={() => setShowOptimize(false)} />}
         </div>
 
         <div className="card" style={{ padding: 10, alignSelf: "start", position: "sticky", top: 8 }}>
@@ -219,6 +223,168 @@ function SetRow({ item, song, number, switching, playedHere }: { item: SetlistIt
       </select>
       <button className="btn small ghost" onClick={() => softDelete(db.setlist_items, item.id)} aria-label="Remove from set"><IconTrash size={18} /></button>
     </li>
+  );
+}
+
+const toOpt = (item: SetlistItem, s: Song): OptSong => ({
+  id: item.id, title: s.title, artist: s.artist, key: item.key_override || singerKey(s) || s.song_key,
+  tempo: s.tempo, tags: s.tags, time_signature: s.time_signature, instrument: s.instrument ?? null, lead_vocal: s.lead_vocal ?? null,
+});
+
+/** Split the set at breaks; each set is optimized on its own and breaks never move. */
+function setsOf(items: SetlistItem[], songMap: Map<string, Song>) {
+  const sets: { songs: OptSong[]; items: SetlistItem[] }[] = [{ songs: [], items: [] }];
+  for (const it of items) {
+    if (it.kind === "break") { sets.push({ songs: [], items: [] }); continue; }
+    const s = it.song_id ? songMap.get(it.song_id) : undefined;
+    if (!s) continue;
+    sets[sets.length - 1].songs.push(toOpt(it, s));
+    sets[sets.length - 1].items.push(it);
+  }
+  return sets;
+}
+
+const sumReports = (rs: FlowReport[]): FlowReport => rs.reduce((a, r) => ({
+  sameKey: a.sameKey + r.sameKey, relativeKey: a.relativeKey + r.relativeKey, slowStacked: a.slowStacked + r.slowStacked,
+  weakOpenOrClose: a.weakOpenOrClose + r.weakOpenOrClose, switches: a.switches + r.switches, vocalRuns: a.vocalRuns + r.vocalRuns,
+  sameArtist: a.sameArtist + r.sameArtist, cost: a.cost + r.cost,
+}), { sameKey: 0, relativeKey: 0, slowStacked: 0, weakOpenOrClose: 0, switches: 0, vocalRuns: 0, sameArtist: 0, cost: 0 });
+
+/**
+ * Suggest a better running order inside each set: keys, slow songs, energy arc, instrument
+ * switches, singers. Shows before/after and the new order; nothing changes until Apply.
+ */
+function OptimizePanel({ items, songMap, onClose }: { items: SetlistItem[]; songMap: Map<string, Song>; onClose: () => void }) {
+  const [opts, setOpts] = useState<OptOptions>({ keepOpener: false, keepCloser: false, fewerSwitches: true });
+  const [undo, setUndo] = useState<{ id: string; position: number }[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  // Work from a snapshot so applying (which moves rows one by one) doesn't re-run the optimizer each time
+  const [snap, setSnap] = useState(items);
+  useEffect(() => { if (!busy && !undo) setSnap(items); }, [items, busy, undo]);
+  const sets = useMemo(() => setsOf(snap, songMap), [snap, songMap]);
+  const result = useMemo(() => sets.map((s) => {
+    const order = optimizeSet(s.songs, opts);
+    return { before: scoreSet(s.songs, opts), after: scoreSet(order, opts), order };
+  }), [sets, opts]);
+  const before = sumReports(result.map((r) => r.before));
+  const after = sumReports(result.map((r) => r.after));
+  const changed = result.some((r, i) => r.order.some((s, j) => s.id !== sets[i].songs[j]?.id));
+  const noTempo = sets.flatMap((s) => s.songs).filter((s) => !s.tempo).length;
+  const noKey = sets.flatMap((s) => s.songs).filter((s) => !s.key).length;
+  // With a strong opener and closer, a set of n songs can space out at most floor((n - 1) / 2) slow ones
+  const tooManySlow = sets.map((s, i) => ({
+    label: sets.length > 1 ? (i === 0 ? "Set 1" : snap.filter((x) => x.kind === "break")[i - 1]?.label || `Set ${i + 1}`) : "This set",
+    slow: s.songs.filter((x) => isSlow(songEnergy(x))).length,
+    n: s.songs.length,
+  })).filter((x) => x.n >= 3 && x.slow > Math.floor((x.n - 1) / 2));
+
+  const apply = async () => {
+    // Reuse each set's existing positions in the new order, so breaks stay exactly where they are
+    setBusy(true);
+    const saved = snap.map((i) => ({ id: i.id, position: i.position }));
+    for (let i = 0; i < sets.length; i++) {
+      const slots = sets[i].items.map((it) => it.position).sort((a, b) => a - b);
+      for (let j = 0; j < result[i].order.length; j++) {
+        const id = result[i].order[j].id;
+        const it = sets[i].items.find((x) => x.id === id)!;
+        if (it.position !== slots[j]) await patchRow(db.setlist_items, id, { position: slots[j] });
+      }
+    }
+    setUndo(saved);
+    setBusy(false);
+  };
+  const revert = async () => {
+    if (!undo) return;
+    setBusy(true);
+    for (const u of undo) {
+      const it = items.find((i) => i.id === u.id);
+      if (it && it.position !== u.position) await patchRow(db.setlist_items, u.id, { position: u.position });
+    }
+    setUndo(null);
+    setBusy(false);
+  };
+
+  const rows: [string, keyof FlowReport][] = [
+    ["Same key back to back", "sameKey"],
+    ["Slow songs back to back", "slowStacked"],
+    ["Slow opener or closer", "weakOpenOrClose"],
+    ["Instrument switches", "switches"],
+    ["Same artist back to back", "sameArtist"],
+    ["4+ songs in a row, same singer", "vocalRuns"],
+  ];
+
+  if (undo) {
+    return (
+      <div className="card stack" style={{ marginTop: 10 }}>
+        <strong>New order applied.</strong>
+        <div className="row">
+          <button className="btn" onClick={revert}>Undo</button>
+          <button className="btn primary" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card stack" style={{ marginTop: 10 }}>
+      <div className="row">
+        <strong className="grow">Optimize running order</strong>
+        <button className="btn small ghost" onClick={onClose}>Close</button>
+      </div>
+      <div className="small dim">
+        Keeps your songs and set breaks; only changes the order inside each set. Aims for a strong opener, a breather in
+        the middle, a big finish, no two songs in a row in the same key, and slow songs spread out.
+      </div>
+      <div className="row wrap" style={{ gap: 14 }}>
+        <label className="check small"><input type="checkbox" checked={opts.keepOpener} onChange={(e) => setOpts({ ...opts, keepOpener: e.target.checked })} /> Keep my opener</label>
+        <label className="check small"><input type="checkbox" checked={opts.keepCloser} onChange={(e) => setOpts({ ...opts, keepCloser: e.target.checked })} /> Keep my closer</label>
+        <label className="check small"><input type="checkbox" checked={opts.fewerSwitches} onChange={(e) => setOpts({ ...opts, fewerSwitches: e.target.checked })} /> Fewer instrument switches</label>
+      </div>
+      <table className="small" style={{ borderCollapse: "collapse", width: "100%", maxWidth: 420 }}>
+        <thead><tr><th style={{ textAlign: "left" }}></th><th>Now</th><th>Optimized</th></tr></thead>
+        <tbody>
+          {rows.map(([label, k]) => (
+            <tr key={k}>
+              <td style={{ padding: "3px 0" }}>{label}</td>
+              <td style={{ textAlign: "center" }}>{before[k]}</td>
+              <td style={{ textAlign: "center", fontWeight: 700, color: after[k] < before[k] ? "var(--ok)" : undefined }}>{after[k]}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {tooManySlow.map((x) => (
+        <div key={x.label} className="small" style={{ color: "var(--accent)" }}>
+          {x.label} has {x.slow} slow songs out of {x.n} — too many to keep apart without a slow opener or closer. Swap one for an upbeat song to clear it.
+        </div>
+      ))}
+      {(noTempo > 0 || noKey > 0) && (
+        <div className="small" style={{ color: "var(--accent)" }}>
+          {noTempo > 0 && `${noTempo} song${noTempo === 1 ? " has" : "s have"} no tempo (treated as medium) — add BPM or tag "mellow"/"upbeat" for a better arc. `}
+          {noKey > 0 && `${noKey} song${noKey === 1 ? " has" : "s have"} no key, so key clashes can't be checked for ${noKey === 1 ? "it" : "them"}.`}
+        </div>
+      )}
+      {result.map((r, i) => r.order.length > 0 && (
+        <div key={i}>
+          {sets.length > 1 && <div className="small dim" style={{ fontWeight: 700, margin: "6px 0 2px" }}>{i === 0 ? "Set 1" : items.filter((x) => x.kind === "break")[i - 1]?.label || `Set ${i + 1}`}</div>}
+          <ol className="small" style={{ margin: 0, paddingLeft: 22 }}>
+            {r.order.map((s, j) => {
+              const e = songEnergy(s);
+              const prev = r.order[j - 1];
+              return (
+                <li key={s.id} style={{ padding: "2px 0" }}>
+                  <span className="energy-bar" style={{ width: `${8 + e * 40}px`, background: isSlow(e) ? "var(--text-dim)" : "var(--accent)" }} title={`Energy ${Math.round(e * 100)}`} />
+                  {" "}{s.title} <span className="dim">· {s.key ?? "no key"}{s.tempo ? ` · ${s.tempo}` : ""}{prev?.instrument && s.instrument && prev.instrument !== s.instrument ? " · ⇄" : ""}</span>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      ))}
+      <div className="row">
+        <button className="btn primary" disabled={!changed || busy} onClick={apply}>{changed ? "Apply new order" : "Already in a good order"}</button>
+        <span className="small dim">Bar = energy (grey = slow song). Drag to fine-tune afterwards.</span>
+      </div>
+    </div>
   );
 }
 

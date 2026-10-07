@@ -397,3 +397,5 @@ h1, h2, h3 { line-height: 1.15; margin: 0; }
 .pdf-page { position: relative; margin: 0 auto 12px; background: #fff; border-radius: 4px; overflow: hidden; }
 .pdf-page canvas { display: block; }
 .pdf-ink { position: absolute; inset: 0; }
+
+.energy-bar { display: inline-block; height: 8px; border-radius: 4px; vertical-align: middle; }
