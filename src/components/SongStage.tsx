@@ -9,6 +9,7 @@ import { AutoScroller, beatsPerBar, createTapTempo, estimateDuration, formatDura
 import { ChartView } from "./ChartView";
 import { ChordHelper } from "./ChordHelper";
 import { PdfConvertDialog } from "./PdfConvertDialog";
+import { Tuner } from "./VoiceTools";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { IconMetronome, IconMusic, IconPause, IconPlay, IconScroll } from "./Icons";
 import { PdfView } from "./PdfView";
@@ -58,6 +59,7 @@ export function SongStage(props: Props) {
   const [useFlow, setUseFlow] = useState(true);
   const [view, setView] = useState<"chart" | "pdf">("chart");
   const [converting, setConverting] = useState<PDFDocumentProxy | null>(null);
+  const [tuner, setTuner] = useState(false);
 
   // Reset per song
   useEffect(() => {
@@ -312,6 +314,7 @@ export function SongStage(props: Props) {
           <div className="empty-state">No chart yet. Edit the song to add chords and lyrics, or attach a PDF.</div>
         )}
       </div>
+      {tuner && <Tuner onClose={() => setTuner(false)} />}
       {converting && <PdfConvertDialog song={song} doc={converting} onClose={() => setConverting(null)} />}
       {showHelper && (
         <ChordHelper song={song} guitarChords={helperChords.guitar} pianoChords={helperChords.piano}
@@ -410,6 +413,7 @@ export function SongStage(props: Props) {
             </>
           )}
           <button className={`btn small ${metroOn ? "on" : ""}`} onClick={toggleMetronome} title="Metronome"><IconMetronome size={18} /></button>
+          <button className="btn small" onClick={() => setTuner(true)} title="Tuner">Tuner</button>
           <button
             className="btn small" title="Tap tempo"
             onClick={() => { const t = tap.current(); if (t && t > 30 && t < 300) setBpm(t); }}

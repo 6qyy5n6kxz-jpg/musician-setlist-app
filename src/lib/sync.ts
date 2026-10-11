@@ -52,9 +52,13 @@ const COLUMN_DEFAULTS: Record<SyncTable, Record<string, unknown>> = {
     title: "", artist: "", song_key: null, tempo: null, time_signature: null, duration_sec: null, capo: 0, tags: [],
     genre: null, year: null, ccli: null, content: "", notes: null, flow: null, requestable: true, karaoke: false,
     timings: null, instrument: null, lead_vocal: null, gear: {}, key_kendra: null, key_devin: null,
+    melody_low: null, melody_high: null,
   },
   song_files: { song_id: null, kind: "pdf", name: "", mime: null, size: null, storage_path: null, annotations: {} },
-  setlists: { name: "", act_id: null, signature: false, event_date: null, venue: null, notes: null },
+  setlists: {
+    name: "", act_id: null, signature: false, event_date: null, venue: null, notes: null,
+    start_time: null, end_time: null, break_minutes: null,
+  },
   setlist_items: {
     setlist_id: null, song_id: null, kind: "song", label: null, position: 0, key_override: null, capo_override: null, notes: null,
   },
@@ -201,6 +205,7 @@ async function pushProfile() {
       display_name: p.display_name, requests_open: p.requests_open, karaoke_open: p.karaoke_open ?? false,
       acts: p.acts ?? [], active_act: p.active_act ?? null, gear_library: p.gear_library ?? {},
       request_options: p.request_options ?? {},
+      vocal_ranges: p.vocal_ranges ?? {},
       request_message: p.request_message,
       tip_url: p.tip_url, settings: p.settings, updated_at: p.updated_at,
     })

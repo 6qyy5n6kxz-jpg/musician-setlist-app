@@ -115,6 +115,15 @@ export function SetlistEditor() {
         <label className="field"><span>Venue</span>
           <input className="input" value={meta.venue ?? ""} onChange={(e) => saveMeta({ venue: e.target.value || null })} />
         </label>
+        <label className="field"><span>Start</span>
+          <input className="input" type="time" value={meta.start_time ?? ""} onChange={(e) => saveMeta({ start_time: e.target.value || null })} />
+        </label>
+        <label className="field"><span>Hard stop</span>
+          <input className="input" type="time" value={meta.end_time ?? ""} onChange={(e) => saveMeta({ end_time: e.target.value || null })} />
+        </label>
+        <label className="field"><span>Break length (min)</span>
+          <input className="input" inputMode="numeric" value={meta.break_minutes ?? 15} onChange={(e) => saveMeta({ break_minutes: Math.max(0, Math.min(120, Number(e.target.value) || 0)) })} />
+        </label>
         <label className="field" style={{ gridColumn: "span 2" }}><span>Notes</span>
           <input className="input" value={meta.notes ?? ""} onChange={(e) => saveMeta({ notes: e.target.value || null })} placeholder="Load-in 6pm · first set 7:30" />
         </label>
@@ -125,6 +134,20 @@ export function SetlistEditor() {
           <div className="set-totals" style={{ marginBottom: 8 }}>
             <strong style={{ color: "var(--text)" }}>{totalCount} songs · {formatDuration(total)}{balanceText(allSetSongs)}</strong>
             {blocks.length > 1 && blocks.map((b, i) => <span key={i}>{b.label}: {b.count} · {formatDuration(b.seconds)}{balanceText(b.songs)}</span>)}
+            {meta.start_time && meta.end_time && (() => {
+              const [sh, sm] = meta.start_time.split(":").map(Number);
+              const [eh, em] = meta.end_time.split(":").map(Number);
+              let window = (eh * 60 + em) - (sh * 60 + sm);
+              if (window <= 0) window += 24 * 60; // past midnight
+              const breaks = (blocks.length - 1) * (meta.break_minutes ?? 15);
+              const planned = Math.round(total / 60) + breaks;
+              const spare = window - planned;
+              return (
+                <span style={{ color: spare < 0 ? "var(--danger)" : spare < 10 ? "var(--accent)" : "var(--ok)" }}>
+                  {Math.floor(planned / 60)}:{String(planned % 60).padStart(2, "0")} with {blocks.length - 1} break{blocks.length === 2 ? "" : "s"} in a {Math.floor(window / 60)}:{String(window % 60).padStart(2, "0")} slot — {spare >= 0 ? `${spare} min to spare` : `${-spare} min too long`}
+                </span>
+              );
+            })()}
           </div>
           {items.length === 0 ? (
             <div className="empty-state card">Add songs from your library on the right, or auto-build a set.</div>

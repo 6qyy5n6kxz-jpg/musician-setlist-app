@@ -6,7 +6,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { IconBack, IconEdit, IconPlay, IconSets } from "../components/Icons";
 import { SongStage } from "../components/SongStage";
 import { blankItem, db, live, positionBetween, saveRow } from "../lib/db";
-import { useSetlists, useSong, useSongs } from "../lib/hooks";
+import { useProfile, useSetlists, useSong, useSongs } from "../lib/hooks";
+import { KeyFinderDialog } from "../components/VoiceTools";
 import { neighbours, songOrder, useSwipe, type SwipeDir } from "../lib/swipe";
 import { keyPrefersFlats } from "../lib/music/chords";
 import { toChordProFile, transposeContent } from "../lib/music/chordpro";
@@ -19,6 +20,8 @@ export function SongPage() {
   const navigate = useNavigate();
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [keyFinder, setKeyFinder] = useState(false);
+  const profile = useProfile();
   const stats = useLiveQuery(async () => (id ? (await playStats()).get(id) : undefined), [id]);
   const allSongs = useSongs();
   // Swipe through the Songs list as last shown (search/filter/sort); otherwise A–Z
@@ -92,6 +95,7 @@ export function SongPage() {
             </div>
           )}
         </div>
+        <button className="btn small" onClick={() => setKeyFinder(true)} title="Find the best key for the singer">🎤 Key</button>
         <button className="btn small" onClick={exportCho} title="Download ChordPro file">.cho</button>
         <button className="btn small" onClick={() => window.print()}>Print</button>
         <Link className="btn small" to={`/perform/song/${song.id}`}><IconPlay size={18} /> Perform</Link>
@@ -103,6 +107,7 @@ export function SongPage() {
           {stats.last ? ` · last on ${new Date(stats.last.date + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}${stats.last.venue ? ` at ${stats.last.venue}` : ""}` : ""}
         </div>
       )}
+      {keyFinder && profile && <KeyFinderDialog song={song} profile={profile} onClose={() => setKeyFinder(false)} />}
       <div key={song.id} className={`swipe-area ${entered ? `swipe-in-${entered}` : ""}`} {...swipe}>
         <SongStage song={song} performKey={singerKey(song)} onPerformKeyChange={setPendingKey} />
       </div>

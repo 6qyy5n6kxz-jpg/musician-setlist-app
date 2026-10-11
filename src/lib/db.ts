@@ -1,6 +1,7 @@
 // Local database (IndexedDB via Dexie). The app always reads and writes here first;
 // sync.ts mirrors it to Supabase whenever there's a connection.
 import type { RequestOptions } from "./pay";
+import type { VocalRanges } from "./keyFinder";
 import Dexie, { type Table } from "dexie";
 import type { GearLibrary, Instrument, LeadVocal, SongGear } from "./gear";
 import type { PdfAnnotations } from "./annotations";
@@ -43,6 +44,9 @@ export interface Song extends SyncFields {
   /** Key to perform in when Kendra / Devin sings lead (null = the written key). */
   key_kendra: string | null;
   key_devin: string | null;
+  /** Lowest and highest sung melody notes in the written key (MIDI numbers), for the key finder. */
+  melody_low?: number | null;
+  melody_high?: number | null;
 }
 
 export interface Gig extends SyncFields {
@@ -90,6 +94,10 @@ export interface Setlist extends SyncFields {
   event_date: string | null;
   venue: string | null;
   notes: string | null;
+  /** Show clock: "19:30" start, "23:00" hard stop, break length in minutes. */
+  start_time?: string | null;
+  end_time?: string | null;
+  break_minutes?: number | null;
 }
 
 export interface SetlistItem extends SyncFields {
@@ -119,6 +127,8 @@ export interface Profile {
   active_act: string | null;
   /** Tip handles, suggested amounts and audience-page extras (shoutouts, email list, booking). */
   request_options?: RequestOptions;
+  /** Each singer's comfortable range (MIDI numbers), from the range test. */
+  vocal_ranges?: VocalRanges;
   settings: Record<string, unknown>;
   updated_at: string;
   dirty: 0 | 1;

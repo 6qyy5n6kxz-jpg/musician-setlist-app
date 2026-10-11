@@ -15,8 +15,9 @@ import { sendMidi } from "../lib/midi";
 import { ensureGig, logPlayed } from "../lib/gigs";
 import { updateSettings, useSettings } from "../lib/settings";
 import { useSyncStatus } from "../lib/sync";
-import { useWakeLock } from "../lib/stage";
+import { estimateDuration, formatDuration, useWakeLock } from "../lib/stage";
 import { neighbours, songOrder, useSwipe } from "../lib/swipe";
+import { formatClock, showClock, type ClockItem } from "../lib/showClock";
 
 export function Perform() {
   const { setlistId, songId } = useParams();
@@ -33,9 +34,22 @@ export function Perform() {
   const { requests, newCount, toasts, dismissToast, setStatus } = useRequests();
 
   const songMap = useMemo(() => new Map((songs ?? []).map((s) => [s.id, s])), [songs]);
+  // Songs skipped tonight (show clock "skip" — just for this performance, the set list isn't changed)
+  const skipKey = `perform-skip-${setlistId ?? ""}`;
+  const [skipped, setSkipped] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(sessionStorage.getItem(skipKey) ?? "[]")); } catch { return new Set(); }
+  });
+  const setSkip = useCallback((id: string, on: boolean) => {
+    setSkipped((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id); else next.delete(id);
+      try { sessionStorage.setItem(skipKey, JSON.stringify([...next])); } catch { /* private mode */ }
+      return next;
+    });
+  }, [skipKey]);
   const playable = useMemo(
-    () => (items ?? []).filter((i) => i.kind === "song" && i.song_id && songMap.has(i.song_id)),
-    [items, songMap],
+    () => (items ?? []).filter((i) => i.kind === "song" && i.song_id && songMap.has(i.song_id) && !skipped.has(i.id)),
+    [items, songMap, skipped],
   );
   const index = Math.min(Math.max(0, Number(params.get("i") ?? 0)), Math.max(0, playable.length - 1));
   const [extra, setExtra] = useState<Song | null>(null); // a request played outside the set
@@ -43,7 +57,7 @@ export function Perform() {
   const song: Song | null | undefined = extra ?? (setlistId ? (item ? songMap.get(item.song_id!) : null) : singleSong);
 
   const [sideOpen, setSideOpen] = useState(() => window.innerWidth > 1000);
-  const [drawer, setDrawer] = useState<"requests" | "live" | "karaoke" | null>(null);
+  const [drawer, setDrawer] = useState<"requests" | "live" | "karaoke" | "clock" | null>(null);
   const [singerId, setSingerId] = useState<string | null>(null);
   const [slidePos, setSlidePos] = useState(0);
   const [blank, setBlank] = useState(false);
@@ -143,6 +157,29 @@ export function Perform() {
 
   // ------------------------------------------------------------ requests
   const queue = openQueue(requests, profile?.request_options?.priority !== false).filter((r) => r.status === "new" || r.status === "queued");
+  // ------------------------------------------------------------ show clock
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 15_000); return () => clearInterval(t); }, []);
+  const songStarted = useRef(Date.now());
+  useEffect(() => { songStarted.current = Date.now(); }, [song?.id]);
+  const clock = useMemo(() => {
+    if (!setlistId || !setlist?.end_time || !items) return null;
+    const requested = new Set(requests.filter((r) => r.song_id && (r.status === "new" || r.status === "queued")).map((r) => r.song_id));
+    const startAt = item ? items.findIndex((i) => i.id === item.id) : 0;
+    const remaining: ClockItem[] = [];
+    for (const it of items.slice(Math.max(0, startAt))) {
+      if (it.kind === "break") { if (remaining.length) remaining.push({ id: it.id, kind: "break", title: it.label ?? "Break", seconds: 0 }); continue; }
+      const s = it.song_id ? songMap.get(it.song_id) : undefined;
+      if (!s || skipped.has(it.id)) continue;
+      remaining.push({ id: it.id, kind: "song", title: s.title, seconds: s.duration_sec || estimateDuration(s.tempo), keep: requested.has(s.id) });
+    }
+    while (remaining.length && remaining[remaining.length - 1].kind === "break") remaining.pop();
+    const elapsed = extra ? 0 : (now - songStarted.current) / 1000;
+    return showClock(new Date(now), setlist.end_time, remaining, elapsed, setlist.break_minutes ?? 15, setlist.start_time);
+  }, [setlistId, setlist?.end_time, setlist?.break_minutes, setlist?.start_time, items, item, songMap, skipped, requests, now, extra]);
+  const clockTone = !clock ? "" : clock.slack < -60 ? "over" : clock.slack < 5 * 60 ? "close" : "ok";
+  const timeOfDay = new Date(now).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
   const playRequest = async (r: SongRequest) => {
     const s = r.song_id ? songMap.get(r.song_id) : undefined;
     void setStatus(r.id, "played");
@@ -241,6 +278,7 @@ export function Perform() {
       {live && (
         <div className="live-pill no-print">
           {setlistId && !extra && <span className="small dim">{index + 1}/{playable.length}</span>}
+          {setlistId && <span className={`small clock-text ${clockTone}`}>{timeOfDay}{clock ? ` ${clock.slack >= 0 ? "+" : "−"}${formatClock(clock.slack)}` : ""}</span>}
           <button className="btn small icon ghost" onClick={() => updateSettings({ fontScale: Math.max(0.6, Math.round((settings.fontScale - 0.1) * 100) / 100) })} aria-label="Smaller text">A−</button>
           <button className="btn small icon ghost" onClick={() => updateSettings({ fontScale: Math.min(2.6, Math.round((settings.fontScale + 0.1) * 100) / 100) })} aria-label="Larger text">A+</button>
           <button className="btn small ghost" onClick={() => setLiveMode(false)}>Exit live</button>
@@ -271,6 +309,11 @@ export function Perform() {
         {(profile?.karaoke_open || lineup.length > 0 || singer) && (
           <button className={`btn small ${singer ? "on" : ""}`} onClick={() => setDrawer(drawer === "karaoke" ? null : "karaoke")} title="Karaoke lineup">
             <IconMic size={18} /> {singer ? <span className="truncate" style={{ maxWidth: 90 }}>{singer.patron_name}</span> : lineup.length || ""}
+          </button>
+        )}
+        {setlistId && (
+          <button className={`btn small clock-chip ${clockTone}`} onClick={() => setDrawer(drawer === "clock" ? null : "clock")} title="Show clock">
+            {timeOfDay}{clock ? ` · ${clock.slack >= 0 ? `+${formatClock(clock.slack)}` : `−${formatClock(clock.slack)} over`}` : ""}
           </button>
         )}
         <button className="btn small" onClick={() => setDrawer(drawer === "requests" ? null : "requests")} style={{ position: "relative" }}>
@@ -390,6 +433,64 @@ export function Perform() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+      {drawer === "clock" && setlist && (
+        <div className="drawer">
+          <div className="drawer-head">
+            <strong className="grow">Show clock</strong>
+            <button className="btn icon ghost" onClick={() => setDrawer(null)} aria-label="Close"><IconClose /></button>
+          </div>
+          <div className="drawer-body stack">
+            <div className="meta-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+              <label className="field"><span>Start</span><input className="input" type="time" value={setlist.start_time ?? ""} onChange={(e) => patchRow(db.setlists, setlist.id, { start_time: e.target.value || null })} /></label>
+              <label className="field"><span>Hard stop</span><input className="input" type="time" value={setlist.end_time ?? ""} onChange={(e) => patchRow(db.setlists, setlist.id, { end_time: e.target.value || null })} /></label>
+              <label className="field"><span>Breaks (min)</span><input className="input" inputMode="numeric" value={setlist.break_minutes ?? 15} onChange={(e) => patchRow(db.setlists, setlist.id, { break_minutes: Math.max(0, Math.min(120, Number(e.target.value) || 0)) })} /></label>
+            </div>
+            {!clock ? (
+              <div className="small dim">Set a hard stop to see whether the rest of the set list fits.</div>
+            ) : (
+              <>
+                <div className={`clock-big ${clockTone}`}>
+                  {clock.slack >= 0 ? `${formatClock(clock.slack)} to spare` : `${formatClock(clock.slack)} over`}
+                </div>
+                <div className="small dim">
+                  {formatClock(clock.secondsLeft)} until {clock.stop.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · the rest of the list ends around {clock.projectedEnd.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                </div>
+                {clock.cuts.length > 0 && (
+                  <div className="stack">
+                    <strong>To finish on time, skip:</strong>
+                    {clock.cuts.map((c) => (
+                      <div key={c.id} className="row">
+                        <span className="grow">{c.title} <span className="dim small">· {formatDuration(c.seconds)}</span></span>
+                        <button className="btn small" onClick={() => setSkip(c.id, true)}>Skip tonight</button>
+                      </div>
+                    ))}
+                    <div className="small dim">Requested songs and your closer are never suggested.</div>
+                  </div>
+                )}
+                {clock.roomForSongs > 0 && <div className="small">Room for about {clock.roomForSongs} more song{clock.roomForSongs === 1 ? "" : "s"} — a good time for requests.</div>}
+              </>
+            )}
+            {skipped.size > 0 && (
+              <div className="stack">
+                <strong className="small">Skipped tonight</strong>
+                {(items ?? []).filter((i) => skipped.has(i.id)).map((i) => (
+                  <div key={i.id} className="row small">
+                    <span className="grow">{songMap.get(i.song_id ?? "")?.title ?? "Song"}</span>
+                    <button className="btn small ghost" onClick={() => {
+                      // Restoring a song earlier in the set shifts positions: keep the current song on screen
+                      const order = (items ?? []).map((x) => x.id);
+                      const before = item && order.indexOf(i.id) < order.indexOf(item.id);
+                      setSkip(i.id, false);
+                      if (before) setParams({ i: String(index + 1) }, { replace: true });
+                    }}>Put back</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="small dim">Song lengths come from each song's duration (or its tempo). Skipping only affects tonight; the set list stays as it is.</div>
           </div>
         </div>
       )}

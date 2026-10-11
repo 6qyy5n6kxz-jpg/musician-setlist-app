@@ -5,6 +5,7 @@ import { GearLibraryEditor } from "../components/GearLibraryEditor";
 import { MidiOutPanel } from "../components/MidiOutPanel";
 import { QrCode } from "../components/QrCode";
 import { SyncBadge } from "../components/SyncBadge";
+import { RangeTest, Tuner } from "../components/VoiceTools";
 import { db, live } from "../lib/db";
 import { useProfile } from "../lib/hooks";
 import { appUrl } from "../lib/links";
@@ -26,6 +27,7 @@ export function SettingsPage() {
       </div>
       <Account />
       <SendToStage />
+      <SingersSection />
       <GearSection />
       <LiveScreens />
       <StageDisplay />
@@ -128,6 +130,23 @@ function ChangePassword() {
       }}>Save</button>
       {msg && <span className="small">{msg}</span>}
     </div>
+  );
+}
+
+function SingersSection() {
+  const profile = useProfile();
+  const [tuner, setTuner] = useState(false);
+  return (
+    <Section title="Singers & tuner" hint="Test each singer's comfortable range once; the key finder on every song uses it to suggest the best key.">
+      {profile ? (
+        <div className="editor-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+          <RangeTest profile={profile} singer="kendra" />
+          <RangeTest profile={profile} singer="devin" />
+        </div>
+      ) : <div className="small dim">Sign in to save vocal ranges.</div>}
+      <div><button className="btn" onClick={() => setTuner(true)}>Open tuner</button></div>
+      {tuner && <Tuner onClose={() => setTuner(false)} />}
+    </Section>
   );
 }
 
