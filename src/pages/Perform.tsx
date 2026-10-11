@@ -7,7 +7,7 @@ import { useProfile, useSetlistItems, useSetlists, useSong, useSongs } from "../
 import { useLivePublisher } from "../lib/live";
 import { guessKey, keyDistance } from "../lib/music/chords";
 import { allChords, lyricSlides, parseChordPro, type Section } from "../lib/music/chordpro";
-import { describeRequest, karaokeLineup, openQueue, useRequests, type SongRequest } from "../lib/requests";
+import { describeRequest, karaokeLineup, openQueue, tipLabel, useRequests, type SongRequest } from "../lib/requests";
 import { KaraokePanel } from "../components/KaraokePanel";
 import { GearStrip } from "../components/GearUI";
 import { DEFAULT_MIDI, singerKey, songMidiMessages } from "../lib/gear";
@@ -142,7 +142,7 @@ export function Perform() {
   }, [slidePos]);
 
   // ------------------------------------------------------------ requests
-  const queue = openQueue(requests).filter((r) => r.status === "new" || r.status === "queued");
+  const queue = openQueue(requests, profile?.request_options?.priority !== false).filter((r) => r.status === "new" || r.status === "queued");
   const playRequest = async (r: SongRequest) => {
     const s = r.song_id ? songMap.get(r.song_id) : undefined;
     void setStatus(r.id, "played");
@@ -373,8 +373,9 @@ export function Perform() {
                 <div key={r.id} className={`req ${r.status}`}>
                   <div className="row">
                     <div className="grow">
-                      <div className="req-title">{r.title}</div>
-                      <div className="small dim">{r.artist}{r.patron_name ? ` · for ${r.patron_name}` : ""} · {new Date(r.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>
+                      <div className="req-title">{r.kind === "shoutout" ? `📣 Shoutout${r.patron_name ? ` from ${r.patron_name}` : ""}` : r.title}</div>
+                      {r.tip_amount ? <div className="small" style={{ color: "var(--ok)", fontWeight: 700 }}>{tipLabel(r)}</div> : null}
+                      <div className="small dim">{r.artist}{r.patron_name && r.kind !== "shoutout" ? ` · for ${r.patron_name}` : ""} · {new Date(r.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>
                     </div>
                     {r.status === "queued" && <span className="chip accent">queued</span>}
                   </div>

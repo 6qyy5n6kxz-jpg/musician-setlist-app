@@ -1,5 +1,6 @@
 // Local database (IndexedDB via Dexie). The app always reads and writes here first;
 // sync.ts mirrors it to Supabase whenever there's a connection.
+import type { RequestOptions } from "./pay";
 import Dexie, { type Table } from "dexie";
 import type { GearLibrary, Instrument, LeadVocal, SongGear } from "./gear";
 import type { PdfAnnotations } from "./annotations";
@@ -116,6 +117,8 @@ export interface Profile {
   gear_library: GearLibrary;
   /** The act currently performing: its name, message and tip link show on the request page. */
   active_act: string | null;
+  /** Tip handles, suggested amounts and audience-page extras (shoutouts, email list, booking). */
+  request_options?: RequestOptions;
   settings: Record<string, unknown>;
   updated_at: string;
   dirty: 0 | 1;
@@ -125,6 +128,10 @@ export interface Act {
   id: string;
   name: string;
   message: string;
+  /** Payment handles for this act (fall back to the defaults when empty). */
+  venmo?: string;
+  cashapp?: string;
+  paypal?: string;
   tip_url: string;
 }
 

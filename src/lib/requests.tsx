@@ -14,8 +14,13 @@ export interface SongRequest {
   patron_name: string | null;
   message: string | null;
   status: RequestStatus;
-  kind: "request" | "karaoke";
+  kind: "request" | "karaoke" | "shoutout" | "booking";
   position: number | null;
+  /** What the patron said they tipped (paid in their own Venmo/Cash App/PayPal — check there). */
+  tip_amount: number | null;
+  tip_method: "venmo" | "cashapp" | "paypal" | "cash" | "other" | null;
+  contact: string | null;
+  event_date: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -34,6 +39,7 @@ interface RequestsCtx {
 }
 
 const Ctx = createContext<RequestsCtx | null>(null);
+const COLUMNS = "id,song_id,title,artist,patron_name,message,status,kind,position,tip_amount,tip_method,contact,event_date,created_at,updated_at";
 
 export function RequestsProvider({ children }: { children: ReactNode }) {
   const { userEmail } = useSyncStatus();
@@ -43,12 +49,12 @@ export function RequestsProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     const since = new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(); // tonight's gig
-    const { data } = await supabase
-      .from("song_requests")
-      .select("id,song_id,title,artist,patron_name,message,status,kind,position,created_at,updated_at")
-      .gte("created_at", since)
-      .order("created_at", { ascending: true });
-    if (data) setRequests(data as SongRequest[]);
+    const bookingsSince = new Date(Date.now() - 1000 * 60 * 60 * 24 * 180).toISOString(); // booking inquiries stay for months
+    const [tonight, bookings] = await Promise.all([
+      supabase.from("song_requests").select(COLUMNS).neq("kind", "booking").gte("created_at", since).order("created_at", { ascending: true }),
+      supabase.from("song_requests").select(COLUMNS).eq("kind", "booking").gte("created_at", bookingsSince).order("created_at", { ascending: true }),
+    ]);
+    if (tonight.data) setRequests([...(bookings.data ?? []), ...tonight.data].map(normalize) as SongRequest[]);
   }, []);
 
   useEffect(() => {
@@ -60,14 +66,14 @@ export function RequestsProvider({ children }: { children: ReactNode }) {
     const ch = supabase
       .channel("song-requests")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "song_requests" }, ({ new: row }) => {
-        const r = row as SongRequest;
+        const r = normalize(row as SongRequest);
         setRequests((prev) => (prev.some((p) => p.id === r.id) ? prev : [...prev, r]));
         setToasts((prev) => [...prev.slice(-2), r]);
         if (navigator.vibrate) navigator.vibrate(120);
         void chime.current?.play().catch(() => {});
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "song_requests" }, ({ new: row }) => {
-        const r = row as SongRequest;
+        const r = normalize(row as SongRequest);
         setRequests((prev) => prev.map((p) => (p.id === r.id ? r : p)));
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "song_requests" }, ({ old }) => {
@@ -142,7 +148,7 @@ export function RequestsProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<RequestsCtx>(() => ({
     requests,
-    newCount: requests.filter((r) => r.status === "new").length,
+    newCount: requests.filter((r) => r.status === "new" && r.kind !== "booking").length,
     toasts,
     dismissToast: (id) => setToasts((prev) => prev.filter((t) => t.id !== id)),
     setStatus, remove, clearFinished, refresh, moveSinger,
@@ -163,12 +169,41 @@ export function useRequests(): RequestsCtx {
   return v;
 }
 
-/** Song requests (not karaoke): new first (oldest first), then queued, then finished. */
-export function openQueue(requests: SongRequest[]): SongRequest[] {
+// numeric columns arrive as strings from the API
+function normalize(r: SongRequest): SongRequest {
+  return { ...r, tip_amount: r.tip_amount == null ? null : Number(r.tip_amount) };
+}
+
+/**
+ * Song requests and shoutouts (not karaoke or bookings): new first, then queued, then finished.
+ * With `tipsFirst`, tipped requests jump ahead within their group (bigger tips first).
+ */
+export function openQueue(requests: SongRequest[], tipsFirst = false): SongRequest[] {
   const rank = { new: 0, queued: 1, played: 2, declined: 3 } as const;
   return requests
-    .filter((r) => (r.kind ?? "request") === "request")
-    .sort((a, b) => rank[a.status] - rank[b.status] || a.created_at.localeCompare(b.created_at));
+    .filter((r) => (r.kind ?? "request") === "request" || r.kind === "shoutout")
+    .sort((a, b) =>
+      rank[a.status] - rank[b.status] ||
+      (tipsFirst && rank[a.status] < 2 ? (b.tip_amount ?? 0) - (a.tip_amount ?? 0) : 0) ||
+      a.created_at.localeCompare(b.created_at));
+}
+
+/** Booking inquiries, newest first. */
+export function bookingInbox(requests: SongRequest[]): SongRequest[] {
+  return requests.filter((r) => r.kind === "booking").sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+/** Tips patrons said they sent tonight. */
+export function tipsTonight(requests: SongRequest[]): { total: number; count: number } {
+  const tipped = requests.filter((r) => r.kind !== "booking" && r.tip_amount);
+  return { total: tipped.reduce((a, r) => a + (r.tip_amount ?? 0), 0), count: tipped.length };
+}
+
+const METHOD = { venmo: "Venmo", cashapp: "Cash App", paypal: "PayPal", cash: "cash", other: "" } as const;
+export function tipLabel(r: SongRequest): string {
+  if (!r.tip_amount) return "";
+  const amt = Number.isInteger(r.tip_amount) ? r.tip_amount : r.tip_amount.toFixed(2);
+  return `💵 $${amt}${r.tip_method && METHOD[r.tip_method] ? ` ${METHOD[r.tip_method]}` : ""}`;
 }
 
 /** Singers still waiting, in lineup order. */
@@ -181,11 +216,17 @@ export function karaokeLineup(requests: SongRequest[]): SongRequest[] {
 
 /** Pop-up text for a new request or sign-up. */
 export function describeRequest(r: SongRequest): { title: string; detail: string } {
+  if (r.kind === "shoutout") {
+    return { title: `📣 Shoutout${r.patron_name ? ` from ${r.patron_name}` : ""}${r.tip_amount ? ` · ${tipLabel(r)}` : ""}`, detail: r.message ?? "" };
+  }
+  if (r.kind === "booking") {
+    return { title: `📅 Booking inquiry${r.patron_name ? ` from ${r.patron_name}` : ""}`, detail: `${r.event_date ? `${r.event_date} · ` : ""}${r.contact ?? ""}` };
+  }
   if (r.kind === "karaoke") {
     return { title: `${r.patron_name ?? "Someone"} signed up to sing`, detail: `${r.title}${r.artist ? ` — ${r.artist}` : ""}` };
   }
   return {
-    title: `${r.title}${r.artist ? ` — ${r.artist}` : ""}`,
+    title: `${r.tip_amount ? `${tipLabel(r)} · ` : ""}${r.title}${r.artist ? ` — ${r.artist}` : ""}`,
     detail: `${r.patron_name ? `from ${r.patron_name}` : "New request"}${r.message ? ` · “${r.message}”` : ""}`,
   };
 }

@@ -7,7 +7,9 @@ import { QrCode } from "../components/QrCode";
 import { saveProfile } from "../lib/db";
 import { useProfile } from "../lib/hooks";
 import { appUrl } from "../lib/links";
-import { openQueue, useRequests, type RequestStatus } from "../lib/requests";
+import { bookingInbox, openQueue, tipLabel, tipsTonight, useRequests, type RequestStatus } from "../lib/requests";
+import { formatMoney } from "../lib/pay";
+import { TipsSettings, FanList } from "../components/TipsSettings";
 import { useSyncStatus } from "../lib/sync";
 
 export function RequestsPage() {
@@ -41,7 +43,10 @@ export function RequestsPage() {
   if (!profile) return <div className="page dim">Loading your profile… {phase === "offline" ? "(offline — connect once to finish setup)" : ""}</div>;
 
   const link = appUrl(`/r/${profile.request_token}`);
-  const queue = openQueue(requests);
+  const tipsFirst = profile.request_options?.priority !== false;
+  const queue = openQueue(requests, tipsFirst);
+  const bookings = bookingInbox(requests);
+  const tips = tipsTonight(requests);
   const active = queue.filter((r) => r.status === "new" || r.status === "queued");
   const finished = queue.filter((r) => r.status === "played" || r.status === "declined");
 
@@ -69,14 +74,18 @@ export function RequestsPage() {
 
       <div className="editor-grid" style={{ gridTemplateColumns: "3fr 2fr" }}>
         <div>
-          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>Queue {active.length ? `(${active.length})` : ""}</h2>
+          <div className="row" style={{ marginBottom: 8 }}>
+            <h2 className="grow" style={{ fontSize: "1.1rem" }}>Queue {active.length ? `(${active.length})` : ""}</h2>
+            {tips.count > 0 && <span className="chip accent" title="What patrons said they sent — check your payment apps">💵 {formatMoney(tips.total)} pledged tonight · {tips.count}</span>}
+          </div>
           {active.length === 0 && <div className="card dim">No requests yet tonight. {profile.requests_open ? "Put the QR code where people can see it." : "Open requests when you're ready."}</div>}
           {active.map((r) => (
             <div key={r.id} className={`req ${r.status}`}>
               <div className="row">
                 <div className="grow">
-                  <div className="req-title">{r.title}</div>
-                  <div className="small dim">{r.artist}{r.patron_name ? ` · for ${r.patron_name}` : ""} · {new Date(r.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{!r.song_id ? " · not in your library" : ""}</div>
+                  <div className="req-title">{r.kind === "shoutout" ? `📣 Shoutout${r.patron_name ? ` from ${r.patron_name}` : ""}` : r.title}</div>
+                  {r.tip_amount ? <div className="small" style={{ color: "var(--ok)", fontWeight: 700 }}>{tipLabel(r)} <span className="dim" style={{ fontWeight: 400 }}>— check {r.tip_method === "cashapp" ? "Cash App" : r.tip_method === "paypal" ? "PayPal" : r.tip_method === "venmo" ? "Venmo" : "your payment app"} to confirm</span></div> : null}
+                  <div className="small dim">{r.artist}{r.patron_name && r.kind !== "shoutout" ? ` · for ${r.patron_name}` : ""} · {new Date(r.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{!r.song_id && r.kind === "request" ? " · not in your library" : ""}</div>
                 </div>
                 <span className={`chip ${r.status === "new" ? "accent" : ""}`}>{r.status}</span>
               </div>
@@ -101,6 +110,28 @@ export function RequestsPage() {
         </div>
 
         <div className="stack">
+          {bookings.length > 0 && (
+            <div className="card stack">
+              <strong>📅 Booking inquiries ({bookings.length})</strong>
+              {bookings.map((b) => (
+                <div key={b.id} className="req" style={{ margin: 0, opacity: b.status === "played" ? 0.6 : 1 }}>
+                  <div className="row">
+                    <div className="grow">
+                      <div className="req-title">{b.patron_name ?? "Someone"}{b.event_date ? ` · ${new Date(b.event_date + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}` : ""}</div>
+                      <div className="small">{/@/.test(b.contact ?? "") ? <a href={`mailto:${b.contact}`}>{b.contact}</a> : <a href={`tel:${(b.contact ?? "").replace(/[^0-9+]/g, "")}`}>{b.contact}</a>}</div>
+                      <div className="small dim">Sent {new Date(b.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>
+                    </div>
+                    <span className="chip">{b.status === "played" ? "replied" : "new"}</span>
+                  </div>
+                  {b.message && <div className="req-msg">“{b.message}”</div>}
+                  <div className="req-actions">
+                    {b.status !== "played" ? <button className="btn small" onClick={() => setStatus(b.id, "played")}>Mark replied</button> : <button className="btn small ghost" onClick={() => setStatus(b.id, "new")}>Reopen</button>}
+                    <button className="btn small ghost" onClick={() => remove(b.id)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="card"><KaraokePanel /></div>
           <div className="card stack" style={{ alignItems: "center", textAlign: "center" }}>
             <QrCode value={link} />
@@ -111,6 +142,8 @@ export function RequestsPage() {
               <button className="btn small" onClick={() => printQrCard(link, activeAct(profile)?.name || name)}>Print sign</button>
             </div>
           </div>
+          <div className="card"><TipsSettings profile={profile} /></div>
+          <div className="card"><FanList /></div>
           <div className="card"><ActsEditor profile={profile} /></div>
           <details className="card stack">
             <summary style={{ cursor: "pointer", fontWeight: 600 }}>Defaults (used when no act is selected)</summary>

@@ -8,6 +8,8 @@ import { updateSettings, useSettings, type PedalAction } from "../lib/settings";
 import { AutoScroller, beatsPerBar, createTapTempo, estimateDuration, formatDuration, Metronome, timedSectionAt, usePedalActions } from "../lib/stage";
 import { ChartView } from "./ChartView";
 import { ChordHelper } from "./ChordHelper";
+import { PdfConvertDialog } from "./PdfConvertDialog";
+import type { PDFDocumentProxy } from "pdfjs-dist";
 import { IconMetronome, IconMusic, IconPause, IconPlay, IconScroll } from "./Icons";
 import { PdfView } from "./PdfView";
 
@@ -55,6 +57,7 @@ export function SongStage(props: Props) {
   const [capo, setCapo] = useState(0);
   const [useFlow, setUseFlow] = useState(true);
   const [view, setView] = useState<"chart" | "pdf">("chart");
+  const [converting, setConverting] = useState<PDFDocumentProxy | null>(null);
 
   // Reset per song
   useEffect(() => {
@@ -289,6 +292,7 @@ export function SongStage(props: Props) {
             blob={pdfBlob}
             annotations={pdf?.annotations}
             onAnnotationsChange={pdf ? (a) => void patchRow(db.song_files, pdf.id, { annotations: a }) : undefined}
+            onConvert={live ? undefined : setConverting}
           />
         ) : view === "pdf" && pdf && !pdfBlob ? (
           <div className="card dim">This PDF hasn't downloaded to this device yet. Connect once and it will be saved for offline use.</div>
@@ -308,6 +312,7 @@ export function SongStage(props: Props) {
           <div className="empty-state">No chart yet. Edit the song to add chords and lyrics, or attach a PDF.</div>
         )}
       </div>
+      {converting && <PdfConvertDialog song={song} doc={converting} onClose={() => setConverting(null)} />}
       {showHelper && (
         <ChordHelper song={song} guitarChords={helperChords.guitar} pianoChords={helperChords.piano}
           onClose={() => updateSettings({ chordHelper: false })} />

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { newId, saveProfile, type Act, type Profile } from "../lib/db";
+import { cleanHandle } from "../lib/pay";
 
 /** Edit acts (solo, duo, …) and choose which one is performing. */
 export function ActsEditor({ profile }: { profile: Profile }) {
@@ -28,7 +29,7 @@ export function ActsEditor({ profile }: { profile: Profile }) {
         ) : <span className="small dim">Add your acts below</span>}
       </div>
       <p className="small dim" style={{ margin: 0 }}>
-        The request page shows the performing act's name, message and tip link. Starting Perform with a setlist switches to that set's act automatically.
+        The request page shows the performing act's name, message and tip handles (or the defaults under Tips & extras). Starting Perform with a setlist switches to that set's act automatically.
       </p>
       {acts.map((a) => (
         <div key={a.id} className="card stack" style={{ background: "var(--bg-sunken)", padding: 12 }}>
@@ -39,8 +40,18 @@ export function ActsEditor({ profile }: { profile: Profile }) {
           </div>
           <input className="input" value={a.message} placeholder="Message to the audience (Request a song! Tips appreciated 🎸)"
             onChange={(e) => change(a.id, { message: e.target.value })} onBlur={save} />
-          <input className="input" value={a.tip_url} placeholder="Tip link: https://venmo.com/u/…"
-            onChange={(e) => change(a.id, { tip_url: e.target.value })} onBlur={save} />
+          <div className="meta-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+            <input className="input" value={a.venmo ?? ""} placeholder="Venmo @handle" aria-label="Venmo for this act"
+              onChange={(e) => change(a.id, { venmo: cleanHandle("venmo", e.target.value) })} onBlur={save} />
+            <input className="input" value={a.cashapp ?? ""} placeholder="Cash App $tag" aria-label="Cash App for this act"
+              onChange={(e) => change(a.id, { cashapp: cleanHandle("cashapp", e.target.value) })} onBlur={save} />
+            <input className="input" value={a.paypal ?? ""} placeholder="PayPal.me name" aria-label="PayPal for this act"
+              onChange={(e) => change(a.id, { paypal: cleanHandle("paypal", e.target.value) })} onBlur={save} />
+          </div>
+          {!a.venmo && !a.cashapp && !a.paypal && (
+            <input className="input" value={a.tip_url} placeholder="Or any tip link: https://…"
+              onChange={(e) => change(a.id, { tip_url: e.target.value })} onBlur={save} />
+          )}
         </div>
       ))}
       <div className="row wrap">

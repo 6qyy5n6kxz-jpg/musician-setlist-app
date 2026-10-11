@@ -12,13 +12,15 @@ interface Props {
   annotations?: PdfAnnotations;
   /** When provided, the Annotate toolbar is available and changes are reported here. */
   onAnnotationsChange?: (a: PdfAnnotations) => void;
+  /** Offer "Make editable chart" (turns the PDF into a ChordPro chart). */
+  onConvert?: (doc: PDFDocumentProxy) => void;
 }
 
 /**
  * Renders every page of a PDF to canvases (iOS Safari only shows page 1 in an iframe), with a
  * notes layer on top: pen, highlighter, text and eraser. The PDF file itself is never modified.
  */
-export function PdfView({ blob, annotations, onAnnotationsChange }: Props) {
+export function PdfView({ blob, annotations, onAnnotationsChange, onConvert }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [pages, setPages] = useState<{ num: number; ratio: number }[]>([]);
@@ -159,6 +161,7 @@ export function PdfView({ blob, annotations, onAnnotationsChange }: Props) {
           {!annotating ? (
             <>
               <button className="btn small" onClick={() => setAnnotating(true)}>✎ Annotate{total ? ` (${total})` : ""}</button>
+              {onConvert && <button className="btn small" onClick={() => doc && onConvert(doc)} disabled={!doc} title="Turn this PDF into a chart you can transpose and edit">⇄ Make editable chart</button>}
               <button className="btn small" onClick={nameLedgerNotes} disabled={!doc || labeling === "Reading the music…"} title="Label notes on ledger lines with their names">♪ Name ledger notes</button>
               <select className="select" style={{ width: "auto", minHeight: 34, padding: "0 8px" }} value={clefMode}
                 onChange={(e) => setClefMode(e.target.value as "auto" | "treble" | "bass" | "grand")} aria-label="Clef">
