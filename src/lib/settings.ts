@@ -28,6 +28,10 @@ export interface Settings {
   columns: 1 | 2;
   /** Chord diagram panel beside the chart. */
   chordHelper: boolean;
+  /** Keep the screen on whenever the app is open ("always") or only in Perform mode. */
+  keepAwake: "always" | "perform";
+  /** Secondary controls (chords on/off, Nashville, diagrams, columns, tuner, tap tempo) shown. */
+  controlsMore: boolean;
   chordColor: string;
   /** Key name (KeyboardEvent.key) -> action. Bluetooth pedals send keys like PageDown or ArrowRight. */
   pedalMap: Record<string, PedalAction>;
@@ -58,6 +62,8 @@ export const DEFAULT_SETTINGS: Settings = {
   nashville: false,
   columns: 1,
   chordHelper: false,
+  keepAwake: "always",
+  controlsMore: false,
   chordColor: "#f5b941",
   pedalMap: {
     PageDown: "pageDown",

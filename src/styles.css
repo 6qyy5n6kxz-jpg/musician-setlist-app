@@ -434,3 +434,13 @@ h1, h2, h3 { line-height: 1.15; margin: 0; }
 .tuner-needle { position: absolute; top: 3px; bottom: 3px; width: 6px; margin-left: -3px; border-radius: 3px; transition: left 0.08s linear; }
 .key-option { display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }
 .key-option.stretch { opacity: 0.6; }
+
+/* Big, labelled way back — findable without looking during a show */
+.back-btn { min-height: 46px; padding: 0 14px 0 8px; font-weight: 700; max-width: 220px; gap: 4px; }
+
+/* Stage-sized touch targets: everything you might hit mid-song is at least 44pt (Apple's minimum),
+   and the song-to-song buttons are bigger still */
+.perform .btn.small, .stage .controls .btn.small, .song-view .topbar .btn.small, .live-pill .btn { min-height: 44px; }
+.stage .controls .select { min-height: 44px !important; }
+.perform .btn.icon, .song-view .topbar .btn.icon { min-width: 44px; min-height: 44px; }
+.perform-top .nav-btn { min-height: 50px; min-width: 92px; font-size: 1.05rem; font-weight: 800; }

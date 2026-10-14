@@ -5,6 +5,8 @@ import { IconGear, IconInbox, IconLibrary, IconSets } from "./components/Icons";
 import { SignedOutBanner } from "./components/SyncBadge";
 import { describeRequest, RequestsProvider, useRequests } from "./lib/requests";
 import { startSync } from "./lib/sync";
+import { useWakeLock } from "./lib/stage";
+import { useSettings } from "./lib/settings";
 import { Library } from "./pages/Library";
 import { SongPage } from "./pages/SongPage";
 import { SongEditor } from "./pages/SongEditor";
@@ -59,6 +61,9 @@ export function App() {
 /** Everything that belongs to the performer: local data, sync, request queue. */
 function Private() {
   useEffect(() => startSync(), []);
+  // On stage the screen must never dim or lock — not just in Perform mode
+  const settings = useSettings();
+  useWakeLock(settings.keepAwake !== "perform");
   return (
     <RequestsProvider>
       <Outlet />

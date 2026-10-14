@@ -14,7 +14,7 @@ import { DEFAULT_MIDI, singerKey, songMidiMessages } from "../lib/gear";
 import { sendMidi } from "../lib/midi";
 import { ensureGig, logPlayed } from "../lib/gigs";
 import { updateSettings, useSettings } from "../lib/settings";
-import { useSyncStatus } from "../lib/sync";
+import { syncNow, useSyncStatus } from "../lib/sync";
 import { estimateDuration, formatDuration, useWakeLock } from "../lib/stage";
 import { neighbours, songOrder, useSwipe } from "../lib/swipe";
 import { formatClock, showClock, type ClockItem } from "../lib/showClock";
@@ -66,6 +66,8 @@ export function Perform() {
   const stage = useRef<StageHandle>(null);
 
   useWakeLock(true);
+  // Starting a show: pull the latest set from the other devices first
+  useEffect(() => { void syncNow(); }, [setlistId]);
 
   // Live mode: hide every bar so the chart fills the screen (pedals and swipes still work)
   const [live, setLive] = useState(() => sessionStorage.getItem("perform-live") === "1");
@@ -285,11 +287,12 @@ export function Perform() {
         </div>
       )}
       {!live && <div className="perform-top">
-        <button className="btn icon ghost" onClick={exit} aria-label="Exit perform mode"><IconClose /></button>
+        <button className="btn back-btn" onClick={exit} aria-label="Leave perform mode"><IconClose size={18} /> <span className="truncate">{setlist?.name ? "Exit" : "Exit"}</span></button>
         {setlistId && <button className={`btn icon ${sideOpen ? "on" : ""}`} onClick={() => setSideOpen(!sideOpen)} aria-label="Show set"><IconList /></button>}
         <div className="grow" style={{ minWidth: 0 }}>
           <div className="title truncate">
             {setlistId && !extra && <span className="dim">{index + 1}/{playable.length} · </span>}
+            {extra && <button className="btn small primary" style={{ marginRight: 8 }} onClick={() => setExtra(null)}>‹ Back to set</button>}
             {extra && <span className="chip accent" style={{ marginRight: 6 }}>Request</span>}
             {song?.title ?? "Empty set"}
           </div>
@@ -321,8 +324,8 @@ export function Perform() {
           {newCount > 0 && <span className="badge" style={{ position: "absolute", top: -6, right: -6 }}>{newCount}</span>}
         </button>
         <button className="btn small" onClick={() => setLiveMode(true)} title="Live mode: hide the menus so the chart fills the screen">Live</button>
-        <button className="btn small" onClick={prev} disabled={!extra && index === 0}>‹ Prev</button>
-        <button className="btn small primary" onClick={next} disabled={!extra && index >= playable.length - 1}>Next ›</button>
+        <button className="btn nav-btn" onClick={prev} disabled={!extra && index === 0}>‹ Prev</button>
+        <button className="btn nav-btn primary" onClick={next} disabled={!extra && index >= playable.length - 1}>Next ›</button>
       </div>}
 
       <div className="perform-body" {...swipe}>

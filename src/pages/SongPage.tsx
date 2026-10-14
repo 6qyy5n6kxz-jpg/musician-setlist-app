@@ -1,12 +1,12 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { singerKey } from "../lib/gear";
 import { playStats } from "../lib/gigs";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { IconBack, IconEdit, IconPlay, IconSets } from "../components/Icons";
 import { SongStage } from "../components/SongStage";
 import { blankItem, db, live, positionBetween, saveRow } from "../lib/db";
-import { useProfile, useSetlists, useSong, useSongs } from "../lib/hooks";
+import { useProfile, useSetlistItems, useSetlists, useSong, useSongs } from "../lib/hooks";
 import { KeyFinderDialog } from "../components/VoiceTools";
 import { neighbours, songOrder, useSwipe, type SwipeDir } from "../lib/swipe";
 import { keyPrefersFlats } from "../lib/music/chords";
@@ -24,12 +24,23 @@ export function SongPage() {
   const profile = useProfile();
   const stats = useLiveQuery(async () => (id ? (await playStats()).get(id) : undefined), [id]);
   const allSongs = useSongs();
-  // Swipe through the Songs list as last shown (search/filter/sort); otherwise A–Z
+  // Opened from a setlist (?set=…): swipe through that set only; otherwise the Songs list as last shown
+  const [params] = useSearchParams();
+  const setId = params.get("set");
+  const fromSet = setId ? setlists?.find((s) => s.id === setId) : undefined;
+  const setItems = useSetlistItems(setId ?? undefined);
   const order = useMemo(() => {
     const ids = allSongs?.map((s) => s.id) ?? [];
+    if (setId && setItems) {
+      const inSet = setItems.filter((i) => i.kind === "song" && i.song_id && ids.includes(i.song_id)).map((i) => i.song_id!);
+      if (id && inSet.includes(id)) return inSet;
+    }
     const saved = songOrder()?.filter((x) => ids.includes(x));
     return saved && id && saved.includes(id) ? saved : ids;
-  }, [allSongs, id]);
+  }, [allSongs, id, setId, setItems]);
+  const inSetMode = !!(setId && setItems && id && order.length && setItems.some((i) => i.song_id === id));
+  const backTo = inSetMode ? `/sets/${setId}` : "/";
+  const backLabel = inSetMode ? fromSet?.name || "Set" : "Songs";
   const nb = id ? neighbours(order, id) : { prev: null, next: null, index: -1 };
   const [entered, setEntered] = useState<SwipeDir | null>(null);
   const goTo = (dir: SwipeDir) => {
@@ -39,9 +50,15 @@ export function SongPage() {
     setAddOpen(false);
     setEntered(dir);
     // replace: Back still returns to the Songs list rather than through every song
-    navigate(`/song/${target}`, { replace: true });
+    navigate(`/song/${target}${inSetMode ? `?set=${setId}` : ""}`, { replace: true });
   };
   const swipe = useSwipe(goTo);
+  // Escape (keyboard / some pedals) goes back too
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !(e.target as HTMLElement)?.closest?.("input,textarea,select,[role=dialog]")) navigate(backTo); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [backTo, navigate]);
 
   if (song === undefined) return null;
   if (song === null || song.deleted_at) return <div className="page empty-state">Song not found. <Link to="/">Back to songs</Link></div>;
@@ -73,7 +90,7 @@ export function SongPage() {
   return (
     <div className="song-view">
       <div className="topbar no-print">
-        <button className="btn ghost icon" onClick={() => navigate(-1)} aria-label="Back"><IconBack /></button>
+        <button className="btn back-btn" onClick={() => navigate(backTo)} aria-label={`Back to ${backLabel}`}><IconBack /> <span className="truncate">{backLabel}</span></button>
         <button className="btn ghost icon" onClick={() => goTo("right")} disabled={!nb.prev} aria-label="Previous song">‹</button>
         <div className="grow truncate" style={{ fontWeight: 700 }}>
           {song.title}
@@ -83,22 +100,24 @@ export function SongPage() {
         {pendingKey && song.song_key && (
           <button className="btn small primary" onClick={saveKey} title="Rewrite the chart's chords in this key">Save in {pendingKey}</button>
         )}
+        <button className="btn small" onClick={() => setKeyFinder(true)} title="Find the best key for the singer">🎤 Key</button>
         <div style={{ position: "relative" }}>
-          <button className="btn small" onClick={() => setAddOpen(!addOpen)}><IconSets size={18} /> Add to set</button>
+          <button className="btn small icon" onClick={() => setAddOpen(!addOpen)} aria-label="More" aria-expanded={addOpen}>⋯</button>
           {addOpen && (
-            <div className="card" style={{ position: "absolute", right: 0, top: 44, zIndex: 30, width: 260, padding: 6, maxHeight: 320, overflowY: "auto" }}>
+            <div className="card" style={{ position: "absolute", right: 0, top: 50, zIndex: 30, width: 260, padding: 6, maxHeight: 380, overflowY: "auto" }}>
+              <div className="small dim" style={{ padding: "4px 8px" }}>Add to set</div>
               {setlists?.length ? setlists.map((s) => (
                 <button key={s.id} className="btn ghost" style={{ width: "100%", justifyContent: "flex-start" }} onClick={() => addToSet(s.id)}>
-                  {s.name || "Untitled set"}
+                  <IconSets size={16} /> {s.name || "Untitled set"}
                 </button>
               )) : <div className="dim small" style={{ padding: 8 }}>No setlists yet.</div>}
+              <hr style={{ border: 0, borderTop: "1px solid var(--line)", margin: "6px 0" }} />
+              <button className="btn ghost" style={{ width: "100%", justifyContent: "flex-start" }} onClick={() => { setAddOpen(false); exportCho(); }}>Download .cho file</button>
+              <button className="btn ghost" style={{ width: "100%", justifyContent: "flex-start" }} onClick={() => { setAddOpen(false); window.print(); }}>Print</button>
             </div>
           )}
         </div>
-        <button className="btn small" onClick={() => setKeyFinder(true)} title="Find the best key for the singer">🎤 Key</button>
-        <button className="btn small" onClick={exportCho} title="Download ChordPro file">.cho</button>
-        <button className="btn small" onClick={() => window.print()}>Print</button>
-        <Link className="btn small" to={`/perform/song/${song.id}`}><IconPlay size={18} /> Perform</Link>
+        <Link className="btn small" to={inSetMode ? `/perform/${setId}?i=${Math.max(0, order.indexOf(song.id))}` : `/perform/song/${song.id}`}><IconPlay size={18} /> Perform</Link>
         <Link className="btn small primary" to={`/song/${song.id}/edit`}><IconEdit size={18} /> Edit</Link>
       </div>
       {stats && stats.count > 0 && (

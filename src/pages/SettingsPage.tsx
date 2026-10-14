@@ -12,6 +12,7 @@ import { appUrl } from "../lib/links";
 import { DEFAULT_SETTINGS, PEDAL_ACTION_LABELS, updateSettings, useSettings, type PedalAction, type Theme } from "../lib/settings";
 import { supabase } from "../lib/supabase";
 import { signOut, syncNow, useSyncStatus } from "../lib/sync";
+import { useWakeLockHeld } from "../lib/stage";
 import SEND_TO_STAGE_JS from "../../shortcut/send-to-stage.js?raw";
 
 export function SettingsPage() {
@@ -240,8 +241,22 @@ function LiveScreens() {
 
 function StageDisplay() {
   const s = useSettings();
+  const held = useWakeLockHeld();
   return (
     <Section title="Stage display">
+      <div className="row wrap">
+        <span className="grow">
+          Keep the screen on
+          <span className="small" style={{ display: "block", color: held ? "var(--ok)" : "var(--accent)" }}>
+            {held === null ? "This browser can't hold the screen on — set iPad Auto-Lock to Never for gigs."
+              : held ? "✓ The screen is being kept on right now." : "Not holding the screen yet — tap anywhere once."}
+          </span>
+        </span>
+        <div className="seg">
+          <button className={s.keepAwake !== "perform" ? "on" : ""} onClick={() => updateSettings({ keepAwake: "always" })}>Whenever the app is open</button>
+          <button className={s.keepAwake === "perform" ? "on" : ""} onClick={() => updateSettings({ keepAwake: "perform" })}>Only in Perform</button>
+        </div>
+      </div>
       <div className="row wrap">
         <span className="grow">Theme</span>
         <div className="seg">

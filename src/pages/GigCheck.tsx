@@ -151,7 +151,9 @@ export function GigCheck() {
         <Row status={counts && counts.offline === counts.files ? "ok" : "warn"} title={counts ? `${counts.songs} songs on this iPad (${counts.charted} with charts)` : "Counting…"}
           detail={counts ? (counts.files ? `${counts.offline} of ${counts.files} PDFs / backing tracks downloaded.` : "No PDFs or backing tracks attached yet.") + (counts.offline < counts.files ? " Stay online until the rest finish downloading." : "") : undefined} />
         <Row status={wake} title={wake === "ok" ? "Screen can stay awake" : "Screen may dim and lock"}
-          detail={wake === "ok" ? "Perform mode keeps the display on." : "This iPadOS version can't hold the screen on from a home-screen app. For gigs set Settings → Display & Brightness → Auto-Lock → Never."} />
+          detail={wake === "ok" ? "The app keeps the display on while it's open." : "This iPadOS version can't hold the screen on from a home-screen app. For gigs set Settings → Display & Brightness → Auto-Lock → Never."} />
+        <Row status="warn" title="Brightness: turn off Auto-Brightness"
+          detail="A dark bar makes the iPad dim itself mid-song, and web apps can't change brightness. iPad Settings → Accessibility → Display & Text Size → Auto-Brightness off, then turn brightness all the way up. (Low light theme helps on dark stages.)" />
         <Row status={audio} title={audio === "ok" ? "Sound works" : "Test the click"} detail="Plays one bar of metronome. Check the iPad isn't muted and the volume is up.">
           <button className="btn small" onClick={playClick}>Play click</button>
         </Row>

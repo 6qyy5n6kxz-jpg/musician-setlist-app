@@ -11,6 +11,7 @@ import { estimateDuration, formatDuration } from "../lib/stage";
 import { setBalance, singerKey } from "../lib/gear";
 import { daysAgo, playedAtVenue } from "../lib/gigs";
 import { useLiveQuery } from "dexie-react-hooks";
+import { syncNow } from "../lib/sync";
 import { isSlow, optimizeSet, scoreSet, songEnergy, type FlowReport, type OptOptions, type OptSong } from "../lib/setOptimizer";
 
 export function SetlistEditor() {
@@ -29,6 +30,8 @@ export function SetlistEditor() {
   const [showOptimize, setShowOptimize] = useState(false);
 
   useEffect(() => { if (setlist && meta?.id !== setlist.id) setMeta(setlist); }, [setlist, meta]);
+  // Opening a set: make sure it's the latest version from the other devices
+  useEffect(() => { void syncNow(); }, [id]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -227,7 +230,7 @@ function SetRow({ item, song, number, switching, playedHere }: { item: SetlistIt
       <span className="num">{number}</span>
       <div className="grow">
         {song ? (
-          <Link to={`/song/${song.id}`} style={{ color: "inherit", textDecoration: "none" }}>
+          <Link to={`/song/${song.id}?set=${item.setlist_id}`} style={{ color: "inherit", textDecoration: "none" }}>
             <div className="truncate" style={{ fontWeight: 600 }}>{song.title}</div>
             <div className="small dim truncate">
               {song.artist} · {formatDuration(song.duration_sec || estimateDuration(song.tempo))}

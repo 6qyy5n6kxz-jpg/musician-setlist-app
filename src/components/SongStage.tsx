@@ -60,6 +60,7 @@ export function SongStage(props: Props) {
   const [view, setView] = useState<"chart" | "pdf">("chart");
   const [converting, setConverting] = useState<PDFDocumentProxy | null>(null);
   const [tuner, setTuner] = useState(false);
+  const moreOpen = !!settings.controlsMore;
 
   // Reset per song
   useEffect(() => {
@@ -390,36 +391,44 @@ export function SongStage(props: Props) {
           <span className="val">Capo {capo}</span>
           <button className="btn small icon" onClick={() => changeCapo(capo + 1)} aria-label="Capo up">+</button>
         </div>
+        {pdf && hasChart && (
+          <div className="group">
+            <button className={`btn small ${view === "pdf" ? "on" : ""}`} onClick={() => setView(view === "pdf" ? "chart" : "pdf")}>PDF</button>
+          </div>
+        )}
         <div className="group">
-          <button className={`btn small ${settings.showChords ? "on" : ""}`} onClick={() => updateSettings({ showChords: !settings.showChords })} title="Show chords">Chords</button>
-          <button className={`btn small ${settings.nashville ? "on" : ""}`} onClick={() => updateSettings({ nashville: !settings.nashville })} title="Nashville numbers">123</button>
-          {hasChart && view === "chart" && (
-            <button className={`btn small ${settings.chordHelper ? "on" : ""}`} onClick={() => updateSettings({ chordHelper: !settings.chordHelper })} title="Chord diagrams">Diagrams</button>
-          )}
-          {song.flow && <button className={`btn small ${useFlow ? "on" : ""}`} onClick={() => setUseFlow(!useFlow)} title="Play in flow order">Flow</button>}
-          {pdf && hasChart && <button className={`btn small ${view === "pdf" ? "on" : ""}`} onClick={() => setView(view === "pdf" ? "chart" : "pdf")}>PDF</button>}
-        </div>
-        <div className="group">
-          <button className="btn small icon" onClick={() => fontStep(-0.1)} aria-label="Smaller text">A−</button>
-          <button className="btn small icon" onClick={() => fontStep(0.1)} aria-label="Larger text">A+</button>
-          <button className={`btn small ${settings.columns === 2 ? "on" : ""}`} onClick={() => updateSettings({ columns: settings.columns === 2 ? 1 : 2 })} title="Two columns">2 col</button>
-        </div>
-        <div className="group">
-          <button className={`btn small ${scrolling ? "on" : ""}`} onClick={toggleScroll} title="Autoscroll"><IconScroll size={18} /></button>
+          <button className={`btn small ${scrolling ? "on" : ""}`} onClick={toggleScroll} title="Autoscroll" aria-label="Autoscroll"><IconScroll size={18} /></button>
           {scrolling && (
             <>
               <button className="btn small icon" onClick={() => scroller.current?.adjust(0.85)} aria-label="Slower">−</button>
               <button className="btn small icon" onClick={() => scroller.current?.adjust(1.18)} aria-label="Faster">+</button>
             </>
           )}
-          <button className={`btn small ${metroOn ? "on" : ""}`} onClick={toggleMetronome} title="Metronome"><IconMetronome size={18} /></button>
-          <button className="btn small" onClick={() => setTuner(true)} title="Tuner">Tuner</button>
-          <button
-            className="btn small" title="Tap tempo"
-            onClick={() => { const t = tap.current(); if (t && t > 30 && t < 300) setBpm(t); }}
-          >{bpm} bpm</button>
+          <button className={`btn small ${metroOn ? "on" : ""}`} onClick={toggleMetronome} title="Metronome" aria-label="Metronome"><IconMetronome size={18} /></button>
           {audio && !audioUrl && <span className="chip" title="Track not downloaded yet"><IconMusic size={14} /> …</span>}
         </div>
+        <div className="group">
+          <button className="btn small icon" onClick={() => fontStep(-0.1)} aria-label="Smaller text">A−</button>
+          <button className="btn small icon" onClick={() => fontStep(0.1)} aria-label="Larger text">A+</button>
+        </div>
+        <button className={`btn small ${moreOpen ? "on" : ""}`} onClick={() => updateSettings({ controlsMore: !moreOpen })} aria-expanded={moreOpen}>{moreOpen ? "Less" : "More…"}</button>
+        {moreOpen && (
+          <>
+            <div className="group">
+              <button className={`btn small ${settings.showChords ? "on" : ""}`} onClick={() => updateSettings({ showChords: !settings.showChords })} title="Show chords">Chords</button>
+              <button className={`btn small ${settings.nashville ? "on" : ""}`} onClick={() => updateSettings({ nashville: !settings.nashville })} title="Nashville numbers">123</button>
+              {hasChart && view === "chart" && (
+                <button className={`btn small ${settings.chordHelper ? "on" : ""}`} onClick={() => updateSettings({ chordHelper: !settings.chordHelper })} title="Chord diagrams">Diagrams</button>
+              )}
+              {song.flow && <button className={`btn small ${useFlow ? "on" : ""}`} onClick={() => setUseFlow(!useFlow)} title="Play in flow order">Flow</button>}
+              <button className={`btn small ${settings.columns === 2 ? "on" : ""}`} onClick={() => updateSettings({ columns: settings.columns === 2 ? 1 : 2 })} title="Two columns">2 col</button>
+            </div>
+            <div className="group">
+              <button className="btn small" onClick={() => setTuner(true)} title="Tuner">Tuner</button>
+              <button className="btn small" title="Tap tempo" onClick={() => { const t = tap.current(); if (t && t > 30 && t < 300) setBpm(t); }}>{bpm} bpm</button>
+            </div>
+          </>
+        )}
         <div className="spacer" />
         {extraControls}
       </div>}

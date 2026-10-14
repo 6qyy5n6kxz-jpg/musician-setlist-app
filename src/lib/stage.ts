@@ -1,5 +1,5 @@
 // Stage helpers: pedal/keyboard actions, screen wake lock, metronome, autoscroll.
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getSettings, type PedalAction } from "./settings";
 
 /** Map key presses (Bluetooth page-turner pedals send keys) to actions. Ignores typing in fields. */
@@ -24,29 +24,51 @@ export function usePedalActions(handlers: Partial<Record<PedalAction, () => void
   }, [enabled]);
 }
 
-/** Keep the screen on while performing. Re-acquired when the app comes back to the foreground. */
+// ------------------------------------------------------------------ keep the screen on
+// One shared screen wake lock for the whole app. Safari can drop it (app switch, lock button,
+// low battery) or refuse it before the first tap, so it is re-requested on every return to the
+// foreground, whenever it's released, and on the next touch if it isn't held.
+let lock: WakeLockSentinel | null = null;
+let wanted = 0;
+const lockListeners = new Set<() => void>();
+const notifyLock = () => lockListeners.forEach((f) => f());
+
+async function acquireLock() {
+  if (!wanted || lock || document.visibilityState !== "visible" || !("wakeLock" in navigator)) return;
+  try {
+    lock = await navigator.wakeLock.request("screen");
+    lock.addEventListener("release", () => { lock = null; notifyLock(); if (wanted) setTimeout(() => void acquireLock(), 500); });
+  } catch {
+    lock = null; // refused (no user gesture yet, low power mode…) — try again on the next touch
+  }
+  notifyLock();
+}
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => void acquireLock());
+  window.addEventListener("pointerdown", () => { if (wanted && !lock) void acquireLock(); }, { passive: true });
+}
+
+/** Whether the screen is being kept on right now (for status displays). */
+export function useWakeLockHeld(): boolean | null {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const f = () => force((n) => n + 1);
+    lockListeners.add(f);
+    return () => { lockListeners.delete(f); };
+  }, []);
+  if (!("wakeLock" in navigator)) return null; // not supported here
+  return !!lock;
+}
+
+/** Keep the screen on while `active` (any number of components can ask). */
 export function useWakeLock(active: boolean) {
   useEffect(() => {
-    if (!active || !("wakeLock" in navigator)) return;
-    let lock: WakeLockSentinel | null = null;
-    let cancelled = false;
-    const acquire = async () => {
-      try {
-        lock = await navigator.wakeLock.request("screen");
-      } catch {
-        /* denied or unsupported in this context */
-      }
-      if (cancelled) void lock?.release();
-    };
-    const onVis = () => {
-      if (document.visibilityState === "visible") void acquire();
-    };
-    void acquire();
-    document.addEventListener("visibilitychange", onVis);
+    if (!active) return;
+    wanted++;
+    void acquireLock();
     return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", onVis);
-      void lock?.release();
+      wanted--;
+      if (!wanted) { void lock?.release(); lock = null; notifyLock(); }
     };
   }, [active]);
 }

@@ -106,6 +106,9 @@ export function normalizeChordToken(token: string, allowLowercase: boolean): str
   const wrapped = /^[[(](.+)[\])]$/.exec(t);
   if (wrapped) t = wrapped[1];
   if (parseChord(t)) return t;
+  // Footnote marks after a chord on Ultimate Guitar ("Em*", "G**", "D†") — the chord is still a chord
+  const marked = /^(.+?)[*†‡]+$/.exec(t);
+  if (marked && parseChord(marked[1])) return marked[1];
   if ((allowLowercase || wrapped) && /^[a-g]/.test(t)) {
     const cap = t[0].toUpperCase() + t.slice(1);
     if (parseChord(cap)) return cap;
@@ -141,9 +144,12 @@ export function mergeChordLine(chordLine: string, lyric: string): string {
     if (col > out.length) out = out.padEnd(col, " ");
     out = out.slice(0, col) + `[${chord}]` + out.slice(col);
   }
-  // Runs of spaces were only there to line chords up; once merged they're noise.
+  // Runs of spaces were only there to line chords up; once merged they're mostly noise — except a
+  // gap right before a chord (an instrumental pause, or chords after the last word), which keeps
+  // a little room so the chords don't bunch up.
   const lead = /^\s*/.exec(out)![0];
-  return lead + out.slice(lead.length).replace(/ {2,}/g, " ").replace(/\s+$/, "");
+  const body = out.slice(lead.length).replace(/ {2,}(\[)?/g, (run, bracket?: string) => (bracket ? run.slice(0, Math.min(run.length - 1, 3)) + bracket : " "));
+  return lead + body.replace(/\s+$/, "");
 }
 
 function chordOnlyLine(line: string): string {

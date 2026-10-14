@@ -26,7 +26,11 @@ interface SyncStatus {
 const LAST_EMAIL = "sync-last-email";
 const readLastEmail = () => { try { return localStorage.getItem(LAST_EMAIL); } catch { return null; } };
 
-let status: SyncStatus = { phase: "idle", lastSynced: null, error: null, pending: 0, pendingFiles: 0, userEmail: null, lostSession: null };
+const LAST_OK = "sync-last-ok";
+const readLastOk = () => { try { return localStorage.getItem(LAST_OK); } catch { return null; } };
+
+// Starts as "syncing" (not "idle"): the badge must never say "Synced" before a sync has actually finished
+let status: SyncStatus = { phase: "syncing", lastSynced: readLastOk(), error: null, pending: 0, pendingFiles: 0, userEmail: null, lostSession: null };
 const statusListeners = new Set<() => void>();
 function setStatus(patch: Partial<SyncStatus>) {
   status = { ...status, ...patch };
@@ -103,7 +107,13 @@ async function countPending(): Promise<Pick<SyncStatus, "pending" | "pendingFile
 }
 
 let session: Session | null = null;
+/** False until the saved login has been read — until then "no session" doesn't mean signed out. */
+let sessionKnown = false;
 let running = false;
+let runStarted = 0;
+let runId = 0;
+/** A sync that hangs (dead network call) must not block every later sync: give up after this long. */
+const RUN_TIMEOUT_MS = 90_000;
 let again = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -112,15 +122,25 @@ export function scheduleSync(delayMs = 1200) {
   timer = setTimeout(() => void syncNow(), delayMs);
 }
 
+function stamp() {
+  const t = new Date().toISOString();
+  try { localStorage.setItem(LAST_OK, t); } catch { /* private mode */ }
+  return t;
+}
+
 export async function syncNow(): Promise<void> {
+  if (!sessionKnown) return; // startSync will run the first sync once the login is loaded
   setStatus(await countPending());
   if (!navigator.onLine) return setStatus({ phase: "offline" });
   if (!session) return setStatus({ phase: "signed-out" });
-  if (running) {
+  if (running && Date.now() - runStarted < RUN_TIMEOUT_MS) {
     again = true;
     return;
   }
+  if (running) setStatus({ phase: "error", error: "The last sync got stuck — trying again." }); // watchdog
   running = true;
+  runStarted = Date.now();
+  const myRun = ++runId;
   setStatus({ phase: "syncing", error: null });
   try {
     // Songs/setlists first: an attachment problem must never hold up the rest of the library.
@@ -129,17 +149,19 @@ export async function syncNow(): Promise<void> {
     await pushProfile();
     for (const t of SYNC_TABLES) await pullTable(t);
     await pullProfile(session.user.id);
-    await downloadBlobs();
+    // Songs and setlists are in step now; big PDF / track downloads can take a while on cell data
     setStatus({
       phase: fileErrors.length ? "error" : "idle",
       error: fileErrors.length ? `Couldn't upload: ${fileErrors.join(", ")} — remove and attach again` : null,
-      lastSynced: new Date().toISOString(),
+      lastSynced: fileErrors.length ? status.lastSynced : stamp(),
       ...(await countPending()),
     });
+    await downloadBlobs();
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     setStatus({ phase: navigator.onLine ? "error" : "offline", error: msg });
   } finally {
+    if (myRun !== runId) return; // a newer run took over after this one got stuck
     running = false;
     if (again) {
       again = false;
@@ -315,8 +337,14 @@ let started = false;
 export function startSync() {
   if (started) return;
   started = true;
+  // If reading the saved login hangs, say so instead of showing "Syncing…" forever
+  setTimeout(() => {
+    if (sessionKnown) return;
+    setStatus({ phase: "error", error: "Couldn't load your sign-in — close and reopen the app." });
+  }, 15_000);
   supabase.auth.getSession().then(({ data }) => {
     session = data.session;
+    sessionKnown = true;
     setStatus({ userEmail: session?.user.email ?? null, lostSession: session ? null : readLastEmail() });
     subscribeRealtime();
     void syncNow();
@@ -324,6 +352,7 @@ export function startSync() {
   supabase.auth.onAuthStateChange((event, s) => {
     const changedUser = s?.user.id !== session?.user.id;
     session = s;
+    sessionKnown = true;
     try {
       if (s?.user.email) localStorage.setItem(LAST_EMAIL, s.user.email);
       else if (event === "SIGNED_OUT" && manualSignOut) localStorage.removeItem(LAST_EMAIL);

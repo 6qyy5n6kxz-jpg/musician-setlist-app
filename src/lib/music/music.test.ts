@@ -96,7 +96,8 @@ describe("import", () => {
   });
   it("merges chords over lyrics by column", () => {
     expect(mergeChordLine("G       C", "Hello my world")).toBe("[G]Hello my[C] world");
-    expect(mergeChordLine("G         D", "Hi")).toBe("[G]Hi [D]");
+    // Chords after the last word keep a little room (up to 3 spaces) so they don't bunch up
+    expect(mergeChordLine("G         D", "Hi")).toBe("[G]Hi   [D]");
   });
   it("converts an Ultimate Guitar paste", () => {
     const { body } = importChart(`[Verse 1]
@@ -109,7 +110,7 @@ the day
 C   D   G`);
     expect(body).toBe(`{start_of_verse: Verse 1}
 [G]Well, today [D/F#]is gonna be
-[Em]the day [C]
+[Em]the day   [C]
 {end_of_verse}
 
 {start_of_chorus: Chorus}
@@ -225,5 +226,20 @@ describe("chord helper voicings", () => {
   it("puts a slash bass under the piano voicing", () => {
     expect(pianoKeys("Dadd9/A")).toEqual({ keys: [2, 4, 6, 9], bass: -3 });
     expect(pianoKeys("Am")?.bass).toBeNull();
+  });
+});
+
+describe("Ultimate Guitar import (real chart excerpts)", () => {
+  it("keeps chords marked with a footnote star (\"Em*\")", () => {
+    const r = importChart("[tab][ch]C[/ch]       [ch]Em[/ch]*      [ch]Dm[/ch]    [ch]G7[/ch]\nI'll be home for Christmas, [/tab]");
+    expect(r.body).toContain("[C]I'll be [Em]home for [Dm]Christ[G7]mas,");
+  });
+  it("keeps a little room for chords after the last word", () => {
+    const r = importChart("[tab]        [ch]D[/ch] - [ch]Gsus2[/ch] [ch]Gsus2[/ch] - [ch]D[/ch] - [ch]Asus4[/ch]\nnow I'm free[/tab]");
+    expect(r.body).toMatch(/now I'm \[D\]free/);
+    expect(r.body).toMatch(/\[Gsus2\].*\[Gsus2\].*\[D\].*\[Asus4\]/);
+  });
+  it("tidies spaces that were only there for alignment", () => {
+    expect(mergeChordLine("G           D", "Hey,  momma rock me")).toBe("[G]Hey, momma [D]rock me");
   });
 });
